@@ -1,0 +1,19 @@
+# Не відслідковувати базу даних та резервні копії
+instance/
+*.db
+backup/
+
+# Віртуальне середовище
+venv/
+
+# Кеші Python
+__pycache__/
+*.pyc
+
+# Системні файли
+.DS_Store
+Thumbs.db
+
+# IDE/Editor
+.vscode/
+.idea/
