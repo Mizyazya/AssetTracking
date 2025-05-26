@@ -6,16 +6,25 @@ from collections import defaultdict
 from sqlalchemy import text
 import pytz
 import shutil
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key')  # Додаємо секретний ключ для сесій/flash
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///assets.db'
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key')
+
+db_url = os.environ.get('DATABASE_URL')
+if db_url:
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///assets.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.template_folder = 'templates'
 db = SQLAlchemy(app)
 
-# Додаємо часову зону Київ
-KYIV_TZ = pytz.timezone('Europe/Kyiv')
+TIMEZONE = os.environ.get('TIMEZONE', 'Europe/Kyiv')
+KYIV_TZ = pytz.timezone(TIMEZONE)
 
 # === Models ===
 class Location(db.Model):
