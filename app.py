@@ -891,10 +891,15 @@ def add_user():
 def edit_user(user_id):
     user = User.query.get_or_404(user_id)
     error = None
+    self_edit = (user.id == current_user.id)
     if request.method == 'POST':
         username = request.form['username'].strip()
         password = request.form['password']
-        role = request.form.get('role', user.role)
+        # Не дозволяємо змінювати роль самому собі
+        if self_edit:
+            role = user.role
+        else:
+            role = request.form.get('role', user.role)
         if username.lower() != user.username.lower() and User.query.filter(db.func.lower(User.username) == username.lower()).first():
             error = 'Користувач з таким логіном вже існує'
         elif password and not validate_password(password):
@@ -906,7 +911,7 @@ def edit_user(user_id):
             user.role = role
             db.session.commit()
             return redirect(url_for('users'))
-    return render_template('edit_user.html', user=user, error=error)
+    return render_template('edit_user.html', user=user, error=error, self_edit=self_edit)
 
 @app.route('/delete_user/<int:user_id>', methods=['POST'])
 @login_required
