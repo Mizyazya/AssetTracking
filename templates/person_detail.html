@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block title %}{{ person.name }} — деталі{% endblock %}
+{% block head %}
+<link href="/static/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/fontawesome.min.css">
+{% endblock %}
+{% block content %}
+<div class="container mt-4">
+  <form method="post" action="{{ url_for('edit_person', person_id=person.id) }}" class="d-inline-flex gap-2 align-items-center mb-2">
+    <input class="form-control d-inline w-auto" name="name" value="{{ person.name }}" required style="max-width: 300px;">
+    <select class="form-select d-inline w-auto" name="location_id" style="max-width: 200px;">
+      <option value="">Без локації</option>
+      {% for loc in locations %}
+        <option value="{{ loc.id }}" {% if person.location and person.location.id == loc.id %}selected{% endif %}>{{ loc.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-success" type="submit"><i class="fa-solid fa-floppy-disk"></i> Зберегти</button>
+  </form>
+  <div class="mb-3">
+    {% set has_assets = person.assets|length > 0 or components|length > 0 %}
+    <form method="post" action="{{ url_for('delete_person', person_id=person.id) }}" class="d-inline">
+      <button class="btn btn-danger" type="submit" {% if has_assets %}disabled title="Не можна видалити, поки є майно або компоненти"{% endif %} onclick="return confirm('Видалити цю людину?');">
+        <i class="fa-solid fa-trash"></i> Видалити користувача
+      </button>
+    </form>
+  </div>
+  <hr>
+  <h4>Видане майно</h4>
+  <div class="table-responsive mb-4">
+    <table class="table table-striped align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Назва</th>
+          <th>Серійний код</th>
+          <th>Коментар</th>
+          <th class="text-end">Дія</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for asset in person.assets %}
+        <tr>
+          <td><a href="{{ url_for('asset_detail', asset_id=asset.id) }}">{{ asset.name }}</a></td>
+          <td>{% if asset.serial %}{{ asset.serial }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td>{% if asset.comments %}{{ asset.comments }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="text-end">
+            {% if asset.type == 'active' %}
+              <form method="post" action="{{ url_for('return_asset', asset_id=asset.id) }}" class="d-inline">
+                <button class="btn btn-warning btn-sm" type="submit" data-bs-toggle="tooltip" data-bs-placement="top" title="Повернути на склад"><i class="fa-solid fa-rotate-left"></i></button>
+              </form>
+              <form method="post" action="{{ url_for('assign_asset', asset_id=asset.id) }}" class="d-inline">
+                <select class="form-select form-select-sm d-inline w-auto" name="person_id" required style="display:inline-block;max-width:150px;">
+                  {% for p in people if p.id != person.id %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                  {% endfor %}
+                </select>
+                <input type="text" name="comment" class="form-control form-control-sm d-inline w-auto ms-1" placeholder="Коментар (для історії)" style="display:inline-block;max-width:180px;">
+                <button class="btn btn-primary btn-sm" type="submit" data-bs-toggle="tooltip" data-bs-placement="top" title="Передати майно"><i class="fa-solid fa-arrow-right"></i></button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="text-center">Немає виданого майна</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if components %}
+  <h5 class="mt-4">Компоненти, видані цій людині</h5>
+  <div class="table-responsive mb-4">
+    <table class="table table-striped align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Компонент</th>
+                <th class="text-end">Кількість</th>
+                <th class="text-end">Дія</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for c in components %}
+            <tr>
+                <td><a href="{{ url_for('asset_detail', asset_id=c.asset.id) }}">{{ c.asset.name }}</a></td>
+                <td class="text-end">{{ c.quantity }}</td>
+                <td class="text-end">
+                    <form method="post" action="{{ url_for('return_asset', asset_id=c.asset.id) }}" class="d-inline">
+                        <input class="form-control form-control-sm d-inline w-auto" name="quantity" type="number" min="1" max="{{ c.quantity }}" value="1" required style="display:inline-block;max-width:70px;">
+                        <input type="hidden" name="person_id" value="{{ person.id }}">
+                        <button class="btn btn-warning btn-sm" type="submit" data-bs-toggle="tooltip" data-bs-placement="top" title="Повернути на склад">
+                            <i class="fa-solid fa-rotate-left"></i> Повернути на склад
+                        </button>
+                    </form>
+                    <form method="post" action="{{ url_for('assign_asset', asset_id=c.asset.id) }}" class="d-inline ms-1">
+                        <input class="form-control form-control-sm d-inline w-auto" name="quantity" type="number" min="1" max="{{ c.quantity }}" value="1" required style="display:inline-block;max-width:70px;">
+                        <input type="hidden" name="from_person_id" value="{{ person.id }}">
+                        <select class="form-select form-select-sm d-inline w-auto" name="person_id" required style="display:inline-block;min-width:170px;max-width:220px;">
+                            <option value="" disabled selected>Передати іншій особі</option>
+                            {% for p in people if p.id != person.id %}
+                                <option value="{{ p.id }}">{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="text" name="comment" class="form-control form-control-sm d-inline w-auto ms-1" placeholder="Коментар (для історії)" style="display:inline-block;max-width:180px;">
+                        <button class="btn btn-primary btn-sm" type="submit" data-bs-toggle="tooltip" data-bs-placement="top" title="Передати майно"><i class="fa-solid fa-arrow-right"></i></button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <h4>Історія змін</h4>
+  <ul class="list-group">
+    {% for log in logs.items %}
+      <li class="list-group-item">
+        <span class="text-muted">{{ log.timestamp.strftime('%Y-%m-%d %H:%M') }}</span>: <b>{{ log.action }}</b>
+        {% if log.asset %} — <a href="{{ url_for('asset_detail', asset_id=log.asset.id) }}">{{ log.asset.name }}</a>{% endif %}
+        {% if log.comment %}<br><span class="text-muted small">{{ log.comment }}</span>{% endif %}
+      </li>
+    {% else %}
+      <li class="list-group-item">Немає історії</li>
+    {% endfor %}
+  </ul>
+  {% if logs.pages > 1 %}
+  <nav class="mt-2">
+    <ul class="pagination justify-content-center mb-0">
+      {% for p in range(1, logs.pages+1) %}
+        <li class="page-item {% if p == logs.page %}active{% endif %}">
+          <a class="page-link" href="{{ url_for('person_detail', person_id=person.id, page=p) }}">{{ p }}</a>
+        </li>
+      {% endfor %}
+    </ul>
+  </nav>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+  tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+    new bootstrap.Tooltip(tooltipTriggerEl);
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Всі задачі</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/fontawesome.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+    {% extends 'base.html' %}
+    {% block title %}Всі задачі{% endblock %}
+    {% block content %}
+    <div class="container mt-4">
+        <div class="row">
+            <!-- Фільтри зліва -->
+            <div class="col-md-3 mb-4">
+                <div class="card">
+                    <div class="card-header bg-light"><b>Фільтри</b></div>
+                    <div class="card-body">
+                        <form method="get" action="{{ url_for('all_tasks') }}">
+                            <div class="mb-3">
+                                <label class="form-label">Локація</label>
+                                <select class="form-select" name="location_id">
+                                    <option value="">Всі локації</option>
+                                    {% for loc in locations %}
+                                        <option value="{{ loc.id }}" {% if request.args.get('location_id') == loc.id|string %}selected{% endif %}>{{ loc.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Користувач</label>
+                                <select class="form-select" name="person_id">
+                                    <option value="">Всі користувачі</option>
+                                    {% for p in people %}
+                                        <option value="{{ p.id }}" {% if request.args.get('person_id') == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Назва активу</label>
+                                <input class="form-control" name="asset_name" value="{{ request.args.get('asset_name', '') }}" placeholder="Пошук по активу...">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Текст задачі</label>
+                                <input class="form-control" name="task_text" value="{{ request.args.get('task_text', '') }}" placeholder="Пошук по задачі...">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Дата відкриття (від)</label>
+                                <input type="date" class="form-control" name="created_from" value="{{ request.args.get('created_from', '') }}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Дата відкриття (до)</label>
+                                <input type="date" class="form-control" name="created_to" value="{{ request.args.get('created_to', '') }}">
+                            </div>
+                            <hr>
+                            <div class="mb-3">
+                                <label class="form-label">Дата закриття (від)</label>
+                                <input type="date" class="form-control" name="closed_from" value="{{ request.args.get('closed_from', '') }}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Дата закриття (до)</label>
+                                <input type="date" class="form-control" name="closed_to" value="{{ request.args.get('closed_to', '') }}">
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-primary" type="submit"><i class="fa-solid fa-filter"></i> Фільтрувати</button>
+                                <a href="{{ url_for('all_tasks') }}" class="btn btn-outline-secondary">Скинути фільтри</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <!-- Основний контент -->
+            <div class="col-md-9">
+                <h1 class="mb-4">Всі задачі</h1>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-header bg-primary text-white"><b>Відкриті задачі</b></div>
+                            <ul class="list-group list-group-flush">
+                            {% for group in grouped_active_tasks.values() %}
+                                <li class="list-group-item">
+                                    <b><a href="{{ url_for('asset_detail', asset_id=group.asset.id) }}">{{ group.asset.name }}</a></b>:
+                                    {% if group.asset.holder %}
+                                        <a href="{{ url_for('person_detail', person_id=group.asset.holder.id) }}">{{ group.asset.holder.name }}</a>
+                                        {% if group.asset.holder.location %}
+                                            (<a href="{{ url_for('location_detail', location_id=group.asset.holder.location.id) }}">{{ group.asset.holder.location.name }}</a>)
+                                        {% endif %}
+                                    {% endif %}
+                                    <ul class="mt-2 mb-1">
+                                    {% for task in group.tasks %}
+                                        <li>{{ task.text }} <span class="text-muted">({{ task.created_at.strftime('%Y-%m-%d %H:%M') }})</span></li>
+                                    {% endfor %}
+                                    </ul>
+                                </li>
+                            {% else %}
+                                <li class="list-group-item">Немає відкритих задач</li>
+                            {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-header bg-success text-white"><b>Виконані задачі</b></div>
+                            <ul class="list-group list-group-flush">
+                            {% for task in closed_tasks_paginated.items %}
+                                <li class="list-group-item">
+                                    <b><a href="{{ url_for('asset_detail', asset_id=task.asset.id) }}">{{ task.asset.name }}</a></b>:
+                                    {% if task.asset.holder %}
+                                        <a href="{{ url_for('person_detail', person_id=task.asset.holder.id) }}">{{ task.asset.holder.name }}</a>
+                                        {% if task.asset.holder.location %}
+                                            (<a href="{{ url_for('location_detail', location_id=task.asset.holder.location.id) }}">{{ task.asset.holder.location.name }}</a>)
+                                        {% endif %}
+                                    {% endif %}<br>
+                                    {{ task.text }}<br>
+                                    <span class="text-muted">Створено: {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}</span><br>
+                                    <span class="text-muted">Закрито: {{ task.closed_at.strftime('%Y-%m-%d %H:%M') }}</span><br>
+                                    {% if task.close_comment %}<span class="text-muted">Коментар при закритті: {{ task.close_comment }}</span><br>{% endif %}
+                                </li>
+                            {% else %}
+                                <li class="list-group-item">Немає виконаних задач</li>
+                            {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <!-- Пагінація -->
+                {% if closed_tasks_paginated.pages > 1 %}
+                <nav>
+                    <ul class="pagination justify-content-center">
+                        {% for p in range(1, closed_tasks_paginated.pages+1) %}
+                            <li class="page-item {% if p == closed_tasks_paginated.page %}active{% endif %}">
+                                <a class="page-link" href="{{ url_for('all_tasks', page=p) }}">{{ p }}</a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </nav>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endblock %}
+</body>
+</html>

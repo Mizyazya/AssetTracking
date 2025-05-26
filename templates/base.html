@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="uk" data-bs-theme="auto">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Облік майна{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/fontawesome.min.css">
+    <style>
+        body { padding-bottom: 40px; }
+        .footer { text-align: center; color: var(--bs-secondary-color, #888); margin-top: 40px; }
+        .theme-toggle { cursor: pointer; font-size: 1.5rem; margin-left: 1rem; }
+        .toast-container { position: fixed; bottom: 1rem; right: 1rem; z-index: 1055; }
+        .card, .list-group-item, .table { background-color: var(--bs-body-bg) !important; color: var(--bs-body-color) !important; }
+        .card-header, .card-footer { background-color: var(--bs-secondary-bg) !important; color: var(--bs-body-color) !important; }
+        .navbar, .navbar-nav .nav-link { color: var(--bs-navbar-color, #fff) !important; }
+        .navbar-dark .navbar-nav .nav-link.active { color: #ffc107 !important; }
+        .table-striped > tbody > tr:nth-of-type(odd) { background-color: var(--bs-secondary-bg) !important; }
+        .table-dark { background-color: #212529 !important; color: #fff !important; }
+        .table-light { background-color: #fff !important; color: #212529 !important; }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-body text-body">
+    <nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}"><i class="fa-solid fa-cubes"></i> Їнженерка облік</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link{% if request.endpoint == 'index' %} active{% endif %}" href="{{ url_for('index') }}"><i class="fa-solid fa-box"></i> Обладнання</a>
+                <a class="nav-link{% if request.endpoint == 'people' %} active{% endif %}" href="{{ url_for('people') }}"><i class="fa-solid fa-user"></i> Люди</a>
+                <a class="nav-link{% if request.endpoint == 'locations' %} active{% endif %}" href="{{ url_for('locations') }}"><i class="fa-solid fa-location-dot"></i> Локації</a>
+                <a class="nav-link{% if request.endpoint == 'all_tasks' %} active{% endif %}" href="{{ url_for('all_tasks') }}"><i class="fa-solid fa-list-check"></i> Всі задачі</a>
+                <button type="button" class="theme-toggle btn btn-link p-0" id="theme-toggle" title="Змінити тему" aria-label="Змінити тему" tabindex="0">
+                    <i class="fa-solid fa-moon" id="theme-icon" style="color: #ffc107; font-size: 1.5rem;"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+    <div class="footer bg-body text-body">
+        <hr>
+        <small>Їнженерка by Artem_Wolf & ChatGPT, GitHub Copilot &copy; {{ year or 2025 }}</small>
+        <br>
+        {% block backup_button %}{% endblock %}
+    </div>
+    <!-- Toast container -->
+<div aria-live="polite" aria-atomic="true" class="position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+  <div id="toast-container" data-flash='{{ get_flashed_messages(with_categories=true)|tojson|safe }}'></div>
+</div>
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/js/all.min.js"></script>
+    <script>
+    // Theme toggle logic
+    function setTheme(theme) {
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        localStorage.setItem('theme', theme);
+        const icon = document.getElementById('theme-icon');
+        if (theme === 'dark') {
+            icon.className = 'fa-solid fa-sun';
+            icon.title = 'Світла тема';
+        } else {
+            icon.className = 'fa-solid fa-moon';
+            icon.title = 'Темна тема';
+        }
+        icon.style.color = '#ffc107';
+    }
+    function getPreferredTheme() {
+        const stored = localStorage.getItem('theme');
+        if (stored === 'dark' || stored === 'light') return stored;
+        // Якщо не збережено, беремо системну і одразу зберігаємо
+        const system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        localStorage.setItem('theme', system);
+        return system;
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        setTheme(getPreferredTheme());
+        document.getElementById('theme-toggle').onclick = function() {
+            const current = document.documentElement.getAttribute('data-bs-theme');
+            setTheme(current === 'dark' ? 'light' : 'dark');
+        };
+    });
+    document.addEventListener('DOMContentLoaded', function() {
+  var toastContainer = document.getElementById('toast-container');
+  var messages = [];
+  try {
+    messages = JSON.parse(toastContainer.dataset.flash);
+  } catch (e) {}
+  messages.forEach(function(item) {
+    showToast(item[1], item[0]);
+  });
+});
+function showToast(message, category) {
+  var toastContainer = document.getElementById('toast-container');
+  var color = (category === 'success') ? 'bg-success' : (category === 'error' ? 'bg-danger' : 'bg-primary');
+  var icon = (category === 'success') ? 'fa-check-circle' : (category === 'error' ? 'fa-exclamation-triangle' : 'fa-info-circle');
+  var toast = document.createElement('div');
+  toast.className = 'toast align-items-center text-white ' + color;
+  toast.setAttribute('role', 'alert');
+  toast.setAttribute('aria-live', 'assertive');
+  toast.setAttribute('aria-atomic', 'true');
+  toast.innerHTML = `<div class="d-flex">
+    <div class="toast-body"><i class="fa-solid ${icon} me-2"></i>${message}</div>
+    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+  </div>`;
+  toastContainer.appendChild(toast);
+  var bsToast = new bootstrap.Toast(toast, { delay: 4000 });
+  bsToast.show();
+  toast.addEventListener('hidden.bs.toast', function() { toast.remove(); });
+}
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% block title %}Люди{% endblock %}
+{% block head %}
+<link href="/static/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/fontawesome.min.css">
+{% endblock %}
+{% block content %}
+<div class="container mt-4">
+  <div class="row">
+    <!-- Фільтри зліва -->
+    <div class="col-md-3 mb-4">
+      <div class="card">
+        <div class="card-header bg-light"><b>Фільтри</b></div>
+        <div class="card-body">
+          <form method="get" action="{{ url_for('people') }}">
+            <div class="mb-3">
+              <label class="form-label">Локація</label>
+              <select class="form-select" name="location_id">
+                <option value="">Всі локації</option>
+                {% for loc in locations %}
+                  <option value="{{ loc.id }}" {% if request.args.get('location_id') == loc.id|string %}selected{% endif %}>{{ loc.name }}</option>
+                {% endfor %}
+                <option value="none" {% if request.args.get('location_id') == 'none' %}selected{% endif %}>Без локації</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Пошук по імені</label>
+              <input class="form-control" name="search" value="{{ request.args.get('search', '') }}" placeholder="Пошук по імені...">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Майно</label>
+              <select class="form-select" name="has_assets">
+                <option value="" {% if not request.args.get('has_assets') %}selected{% endif %}>Усі</option>
+                <option value="yes" {% if request.args.get('has_assets') == 'yes' %}selected{% endif %}>Має майно</option>
+                <option value="no" {% if request.args.get('has_assets') == 'no' %}selected{% endif %}>Немає майна</option>
+              </select>
+            </div>
+            <div class="d-grid gap-2">
+              <button class="btn btn-primary" type="submit"><i class="fa-solid fa-filter"></i> Фільтрувати</button>
+              <a href="{{ url_for('people') }}" class="btn btn-outline-secondary">Скинути фільтри</a>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="card mt-4">
+        <div class="card-header bg-light"><b>Добавити інструктора</b></div>
+        <div class="card-body">
+          <form method="post" action="{{ url_for('add_person') }}" class="row g-3">
+              <div class="col-12 mb-2">
+                  <input class="form-control" name="name" placeholder="Ім'я" required>
+              </div>
+              <div class="col-12 mb-2">
+                  <input class="form-control" name="phone" placeholder="Номер телефону (необов'язково)">
+              </div>
+              <div class="col-12 mb-3">
+                  <select class="form-select" name="location_id">
+                      <option value="">Без локації</option>
+                      {% for loc in locations %}
+                          <option value="{{ loc.id }}">{{ loc.name }}</option>
+                      {% endfor %}
+                  </select>
+              </div>
+              <div class="col-12">
+                  <button class="btn btn-primary w-100" type="submit">Добавити інструктора</button>
+              </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    <!-- Основний контент -->
+    <div class="col-md-9">
+      <h1 class="mb-4">Люди</h1>
+      {% if filter_info %}<div class="alert alert-info">{{ filter_info }}</div>{% endif %}
+      <div class="card">
+        <div class="card-header"><b>Список людей</b></div>
+        <div class="table-responsive">
+        <table class="table table-striped align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Ім'я</th>
+                    <th>Локація</th>
+                    <th>Телефон</th>
+                    <th>К-сть активів</th>
+                    <th>Компоненти</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for person in people_paginated.items %}
+                <tr>
+                    <td><a href="{{ url_for('person_detail', person_id=person.id) }}"><b>{{ person.name }}</b></a></td>
+                    <td>{% if person.location %}{{ person.location.name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                    <td>{% if person.phone %}{{ person.phone }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                    <td>{{ person.assets|selectattr('type', 'equalto', 'active')|list|length }}</td>
+                    <td>
+                      {% set comps = person.assets|selectattr('type', 'equalto', 'component')|list %}
+                      {% if comps and comps|sum(attribute='quantity') > 0 %}+{% else %}-{% endif %}
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="5" class="text-center">Немає записів</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <div class="card-footer text-center">
+          {% if people_paginated.pages > 1 %}
+            <nav>
+              <ul class="pagination justify-content-center mb-0">
+                {% for p in range(1, people_paginated.pages+1) %}
+                  <li class="page-item {% if p == people_paginated.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('people', page=p) }}">{{ p }}</a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </nav>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+  tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+    new bootstrap.Tooltip(tooltipTriggerEl);
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Облік майна</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/fontawesome.min.css">
+</head>
+<body>
+{% extends 'base.html' %}
+{% block title %}Обладнання{% endblock %}
+{% block content %}
+<h1 class="mb-4">Обладнання</h1>
+<form method="post" action="{{ url_for('add_asset') }}" class="row g-3 mb-4">
+    <div class="col-md-3">
+        <input class="form-control" name="name" placeholder="Назва" required>
+    </div>
+    <div class="col-md-2">
+        <select class="form-select" name="type" id="asset_type" required onchange="toggleFields()">
+            <option value="active">Актив (індивідуальний)</option>
+            <option value="component">Компонент (кількісний)</option>
+        </select>
+    </div>
+    <div class="col-md-2" id="serial_field">
+        <input class="form-control" name="serial" placeholder="Серійний номер">
+    </div>
+    <div class="col-md-2" id="quantity_field">
+        <input class="form-control" name="quantity" value="1" min="1" type="number" placeholder="Кількість">
+    </div>
+    <div class="col-md-2">
+        <input class="form-control" name="comments" placeholder="Коментар">
+    </div>
+    <div class="col-md-1">
+        <button class="btn btn-primary w-100" type="submit"><i class="fa-solid fa-plus"></i></button>
+    </div>
+</form>
+<script>
+function toggleFields() {
+    var type = document.getElementById('asset_type').value;
+    document.getElementById('quantity_field').style.display = (type === 'component') ? 'block' : 'none';
+    document.getElementById('serial_field').style.display = (type === 'active') ? 'block' : 'none';
+}
+document.addEventListener('DOMContentLoaded', function() {
+    toggleFields();
+});
+</script>
+<div class="container mt-4">
+  <div class="row">
+    <!-- Фільтри зліва -->
+    <div class="col-md-3 mb-4">
+      <div class="card">
+        <div class="card-header bg-light"><b>Фільтри</b></div>
+        <div class="card-body">
+          <form method="get" action="{{ url_for('index') }}">
+            <div class="mb-3">
+              <label class="form-label">Назва</label>
+              <input class="form-control" name="name" value="{{ request.args.get('name', '') }}" placeholder="Пошук по назві...">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Серійний номер</label>
+              <input class="form-control" name="serial" value="{{ request.args.get('serial', '') }}" placeholder="Пошук по серійному...">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Коментар</label>
+              <input class="form-control" name="comments" value="{{ request.args.get('comments', '') }}" placeholder="Пошук по коментарю...">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Локація</label>
+              <select class="form-select" name="location_id">
+                <option value="">Всі локації</option>
+                {% for loc in locations %}
+                  <option value="{{ loc.id }}" {% if request.args.get('location_id') == loc.id|string %}selected{% endif %}>{{ loc.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Користувач</label>
+              <select class="form-select" name="person_id">
+                <option value="">Всі користувачі</option>
+                {% for p in people %}
+                  <option value="{{ p.id }}" {% if request.args.get('person_id') == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Тип</label>
+              <select class="form-select" name="type">
+                <option value="">Всі типи</option>
+                <option value="active" {% if request.args.get('type') == 'active' %}selected{% endif %}>Актив</option>
+                <option value="component" {% if request.args.get('type') == 'component' %}selected{% endif %}>Компонент</option>
+              </select>
+            </div>
+            <div class="d-grid gap-2">
+              <button class="btn btn-primary" type="submit"><i class="fa-solid fa-filter"></i> Фільтрувати</button>
+              <a href="{{ url_for('index') }}" class="btn btn-outline-secondary"><i class="fa-solid fa-xmark"></i> Скинути</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    <!-- Основний контент -->
+    <div class="col-md-9">
+      <div class="card mb-3">
+    <div class="card-header"><b>Список наявного обладнання</b></div>
+    <div class="table-responsive">
+    <table class="table table-striped align-middle mb-0">
+        <thead>
+            <tr>
+                <th>
+                  <a href="{{ name_sort_url }}" class="text-decoration-none text-dark">
+                    Назва
+                    {% if request.args.get('sort') == 'name' %}
+                      <i class="fa-solid fa-sort-{{ 'down' if request.args.get('order', 'asc') == 'desc' else 'up' }}"></i>
+                    {% endif %}
+                  </a>
+                </th>
+                <th>Серійний код</th>
+                <th>
+                  <a href="{{ location_sort_url }}" class="text-decoration-none text-dark">
+                    Місце
+                    {% if request.args.get('sort') == 'location' %}
+                      <i class="fa-solid fa-sort-{{ 'down' if request.args.get('order', 'asc') == 'desc' else 'up' }}"></i>
+                    {% endif %}
+                  </a>
+                </th>
+                <th>Коментар</th>
+                <th>
+                  <a href="{{ task_count_sort_url }}" class="text-decoration-none text-dark">
+                    Задачі
+                    {% if request.args.get('sort') == 'task_count' %}
+                      <i class="fa-solid fa-sort-{{ 'down' if request.args.get('order', 'asc') == 'desc' else 'up' }}"></i>
+                    {% endif %}
+                  </a>
+                </th>
+                <th style="width: 1%; white-space: nowrap;">
+                  <a href="{{ created_at_sort_url }}" class="text-decoration-none text-dark">
+                    Дата створення
+                    {% if request.args.get('sort') == 'created_at' %}
+                      <i class="fa-solid fa-sort-{{ 'down' if request.args.get('order', 'desc') == 'desc' else 'up' }}"></i>
+                    {% endif %}
+                  </a>
+                </th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for asset in assets %}
+            <tr>
+                <td><a href="{{ url_for('asset_detail', asset_id=asset.id) }}"><b>{{ asset.name }}</b></a></td>
+                <td>{% if asset.serial %}{{ asset.serial }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td>
+                    {% if asset.type == 'component' %}
+                        <span class="badge bg-secondary">Склад: {{ asset.quantity }} шт</span>
+                        {% set holders = holders_map.get(asset.id) %}
+                        {% if holders %}
+                            <br><span class="text-muted">Видано:</span>
+                            {% for person, qty in holders %}
+                                <span class="badge bg-info text-dark">{{ person.name }}{% if person.location %} ({{ person.location.name }}){% endif %}: {{ qty }} шт</span>{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                    {% else %}
+                        {% if asset.status == 'На складі' %}
+                            <span class="badge bg-secondary">На складі</span>
+                        {% elif asset.status == 'У користуванні' and holders_map.get(asset.id) %}
+                            <span class="badge bg-primary">{{ holders_map[asset.id][0].name }}{% if holders_map[asset.id][1] %} ({{ holders_map[asset.id][1].name }}){% endif %}</span>
+                        {% else %}
+                            <span class="badge bg-warning text-dark">{{ asset.status }}</span>
+                        {% endif %}
+                    {% endif %}
+                </td>
+                <td>{% if asset.comments %}{{ asset.comments }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td>
+                    {% set task_count = asset.tasks|selectattr('status', 'equalto', 'active')|list|length %}
+                    <span class="badge bg-{{ 'danger' if task_count > 0 else 'secondary' }}">{{ task_count }}</span>
+                </td>
+                <td style="white-space:nowrap;">{{ asset.created_at.strftime('%Y-%m-%d') if asset.created_at else '' }}</td>
+            </tr>
+        {% else %}
+            <tr><td colspan="6" class="text-center">Немає записів</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+    </div>
+  </div>
+  {% if assets.pages > 1 %}
+    <nav>
+      <ul class="pagination justify-content-center mb-0">
+        {% for p in range(1, assets.pages+1) %}
+          <li class="page-item {% if p == assets.page %}active{% endif %}">
+            <a class="page-link" href="{{ url_for('index', page=p) }}">{{ p }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </nav>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block backup_button %}
+<form action="{{ url_for('backup_database') }}" method="post" style="display:inline;">
+  <button type="submit" class="btn btn-outline-secondary btn-sm" onclick="return confirm('Створити резервну копію бази даних?')">
+    <i class="fas fa-database"></i> Резервна копія БД
+  </button>
+</form>
+{% endblock %}
+</body>
+</html>

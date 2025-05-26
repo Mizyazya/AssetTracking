@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Деталі майна</title>
+    <!-- Додаємо посилання на Bootstrap CSS -->
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/fontawesome.min.css">
+</head>
+<body>
+{% extends 'base.html' %}
+{% block title %}Деталі майна{% endblock %}
+{% block content %}
+<div class="row">
+    <!-- Ліва колонка: Інформація та редагування -->
+    <div class="col-lg-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <span><b>Інформація</b></span>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('edit_asset', asset_id=asset.id) }}">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Назва</label>
+                        <input class="form-control" id="name" name="name" value="{{ asset.name }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="serial" class="form-label">Серійний номер</label>
+                        <input class="form-control" id="serial" name="serial" value="{{ asset.serial }}">
+                    </div>
+                    <div class="mb-3">
+                        <label for="comments" class="form-label">Коментар</label>
+                        <textarea class="form-control" id="comments" name="comments" rows="3">{{ asset.comments }}</textarea>
+                    </div>
+                    <button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Зберегти</button>
+                </form>
+                <p class="mt-3 mb-1"><b>Тип:</b> {{ asset.type }}</p>
+                {% if asset.type == 'component' %}
+                    <p><b>Кількість на складі:</b> {{ asset.quantity }}</p>
+                    <!-- Форма передачі компоненту людині -->
+                    <form method="post" action="{{ url_for('assign_asset', asset_id=asset.id) }}" class="mb-3">
+                        <div class="input-group">
+                            <input class="form-control" name="quantity" type="number" min="1" max="{{ asset.quantity }}" value="1" required style="max-width:100px;">
+                            <select class="form-select" name="person_id" required>
+                                <option value="" disabled selected>Оберіть користувача</option>
+                                {% for person in people %}
+                                    <option value="{{ person.id }}">{{ person.name }}{% if person.location %} ({{ person.location.name }}){% endif %}</option>
+                                {% endfor %}
+                            </select>
+                            <input type="text" name="comment" class="form-control" placeholder="Коментар (для історії)">
+                            <button class="btn btn-success" type="submit"><i class="fa-solid fa-share"></i> Передати</button>
+                        </div>
+                    </form>
+                    <!-- Форма для поставки компонентів -->
+                    <form method="post" action="{{ url_for('add_component_supply', asset_id=asset.id) }}" class="mb-3">
+                        <div class="input-group">
+                            <input class="form-control" name="quantity" type="number" min="1" value="1" required style="max-width:100px;">
+                            <input type="text" name="comment" class="form-control" placeholder="Коментар (для історії)">
+                            <button class="btn btn-success" type="submit"><i class="fa-solid fa-plus"></i> Поставка</button>
+                        </div>
+                    </form>
+                    {% if holders_info %}
+                        <p class="mt-3 mb-1"><b>На руках:</b></p>
+                        <ul>
+                        {% for person, qty in holders_info.items() %}
+                            <li><a href="{{ url_for('person_detail', person_id=person.id) }}">{{ person.name }}</a>{% if person.location %} ({{ person.location.name }}){% endif %}: {{ qty }} шт</li>
+                        {% endfor %}
+                        </ul>
+                    {% endif %}
+                {% endif %}
+                <p><b>Статус:</b> {{ asset.status }}</p>
+                {% if asset.type == 'active' %}
+                    {% if asset.status == 'На складі' %}
+                        <!-- Форма призначення активу людині -->
+                        <form method="post" action="{{ url_for('assign_asset', asset_id=asset.id) }}" class="mb-3">
+                            <div class="input-group">
+                                <select class="form-select" name="person_id" required>
+                                    <option value="" disabled selected>Оберіть користувача</option>
+                                    {% for person in people %}
+                                        <option value="{{ person.id }}">{{ person.name }}{% if person.location %} ({{ person.location.name }}){% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                                <input type="text" name="comment" class="form-control" placeholder="Коментар (для історії)">
+                                <button class="btn btn-success" type="submit"><i class="fa-solid fa-user-plus"></i> Призначити</button>
+                            </div>
+                        </form>
+                    {% elif holder %}
+                        <p><b>Видано:</b> <a href="{{ url_for('person_detail', person_id=holder.id) }}">{{ holder.name }}</a>{% if holder.location %} ({{ holder.location.name }}){% endif %}</p>
+                        <!-- Форма передачі активу іншій людині -->
+                        <form method="post" action="{{ url_for('assign_asset', asset_id=asset.id) }}" class="mb-3">
+                            <div class="input-group">
+                                <select class="form-select" name="person_id" required>
+                                    <option value="" disabled selected>Передати іншій особі</option>
+                                    {% for person in people if person.id != holder.id %}
+                                        <option value="{{ person.id }}">{{ person.name }}{% if person.location %} ({{ person.location.name }}){% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                                <input type="text" name="comment" class="form-control" placeholder="Коментар (для історії)">
+                                <button class="btn btn-primary" type="submit"><i class="fa-solid fa-share"></i> Передати</button>
+                            </div>
+                        </form>
+                        <!-- Кнопка повернення на склад -->
+                        <form method="post" action="{{ url_for('return_asset', asset_id=asset.id) }}" class="mb-3">
+                            <button type="submit" class="btn btn-warning btn-sm"><i class="fa-solid fa-undo"></i> Повернути на склад</button>
+                        </form>
+                    {% endif %}
+                {% endif %}
+                {% if asset.type == 'active' %}
+                <!-- Секція задач для активу -->
+                <div class="card mt-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><b>Задачі</b></span>
+                        <button class="btn btn-sm btn-success" data-bs-toggle="collapse" data-bs-target="#addTaskForm"><i class="fa-solid fa-plus"></i> Додати</button>
+                    </div>
+                    <div class="collapse" id="addTaskForm">
+                        <form method="post" action="{{ url_for('add_task', asset_id=asset.id) }}" class="p-3 border-bottom">
+                            <div class="input-group">
+                                <input class="form-control" name="task_text" placeholder="Текст задачі" required>
+                                <button class="btn btn-primary" type="submit">Додати</button>
+                            </div>
+                        </form>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        {% if active_tasks and active_tasks|length > 0 %}
+                            {% for task in active_tasks %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span>{{ task.text }}</span>
+                                <form method="post" action="{{ url_for('close_task', task_id=task.id) }}" class="d-inline mb-0 d-flex align-items-center gap-2">
+                                    <input type="text" name="close_comment" class="form-control form-control-sm" placeholder="Коментар при закритті" style="max-width: 180px;">
+                                    <button type="submit" class="btn btn-success btn-sm">Виконано</button>
+                                </form>
+                            </li>
+                            {% endfor %}
+                        {% else %}
+                            <li class="list-group-item text-muted">Задач немає</li>
+                        {% endif %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <!-- Права колонка: Історія змін з пагінацією -->
+    <div class="col-lg-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header"><b>Історія змін</b></div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush mb-0">
+                {% for log in logs.items %}
+                    <li class="list-group-item">
+                        <span class="text-muted">{{ log.timestamp.strftime('%Y-%m-%d %H:%M') }}</span>: <b>{{ log.action }}</b>
+                        {% if log.person %} — <a href="{{ url_for('person_detail', person_id=log.person.id) }}">{{ log.person.name }}</a>{% endif %}
+                        {% if log.quantity %} (Кількість: {{ log.quantity }}){% endif %}
+                        {% if log.comment %}<br><span class="text-muted small">{{ log.comment }}</span>{% endif %}
+                    </li>
+                {% else %}
+                    <li class="list-group-item">Немає історії</li>
+                {% endfor %}
+                </ul>
+            </div>
+            {% if logs.pages > 1 %}
+            <div class="card-footer">
+                <nav class="mt-2">
+                  <ul class="pagination justify-content-center mb-0">
+                    {% for p in range(1, logs.pages+1) %}
+                      <li class="page-item {% if p == logs.page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('asset_detail', asset_id=asset.id, page=p) }}">{{ p }}</a>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </nav>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+<!-- Додаємо скрипти Bootstrap JS та Popper.js (необхідно для роботи деяких компонентів Bootstrap) -->
+<script src="/static/js/bootstrap.bundle.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const editButton = document.getElementById('edit-button');
+    const form = document.getElementById('asset-info-form');
+    const nameInput = document.getElementById('name');
+    const serialInput = document.getElementById('serial');
+    const commentsInput = document.getElementById('comments');
+    const editActions = document.getElementById('edit-actions');
+    const cancelEdit = document.getElementById('cancel-edit');
+    let editing = false;
+
+    function setEditMode(on) {
+        editing = on;
+        [nameInput, serialInput, commentsInput].forEach(el => {
+            el.readOnly = !on;
+            el.classList.toggle('form-control-plaintext', !on);
+            el.classList.toggle('form-control', on);
+        });
+        editActions.classList.toggle('d-none', !on);
+        editButton.style.display = on ? 'none' : 'inline-block';
+    }
+    if (editButton) {
+        editButton.addEventListener('click', function() {
+            setEditMode(true);
+        });
+    }
+    if (cancelEdit) {
+        cancelEdit.addEventListener('click', function(e) {
+            e.preventDefault();
+            setEditMode(false);
+            // Повернути значення до початкових (опціонально)
+            nameInput.value = "{{ asset.name|escapejs }}";
+            serialInput.value = "{{ asset.serial|escapejs }}";
+            commentsInput.value = `{{ asset.comments|escapejs }}`;
+        });
+    }
+    setEditMode(false);
+});
+</script>
+{% block scripts %}
+{{ super() }}
+<!-- Typeahead видалено, залишено стандартний select -->
+{% endblock %}
+</body>
+</html>
