@@ -665,8 +665,10 @@ def backup_database():
             # Формуємо команду pg_dump
             cmd = f"PGPASSWORD={password} pg_dump -h {host} -p {port} -U {user} -F c -b -v -f '{backup_file}' {dbname}"
             result = os.system(cmd)
-            if result == 0:
+            if result == 0 and os.path.exists(backup_file):
                 flash('Резервну копію бази даних створено успішно (PostgreSQL).', 'success')
+            elif os.path.exists(backup_file):
+                flash('Резервну копію бази даних створено, але pg_dump повернув помилку. Перевірте дамп.', 'warning')
             else:
                 flash('Помилка при створенні резервної копії PostgreSQL.', 'danger')
         else:

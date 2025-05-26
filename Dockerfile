@@ -10,7 +10,7 @@ COPY . .
 
 RUN mkdir -p /app/instance /app/backup
 
-RUN apt-get update && apt-get install -y postgresql-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y postgresql-client-16 && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 8000
 
