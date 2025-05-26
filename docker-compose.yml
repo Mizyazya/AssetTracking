@@ -1,0 +1,30 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: assetdb
+      POSTGRES_USER: assetuser
+      POSTGRES_PASSWORD: assetpass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backup:/backup
+    ports:
+      - "5432:5432" # (опціонально, для доступу ззовні)
+
+  web:
+    build: .
+    depends_on:
+      - db
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./instance:/app/instance
+      - ./backup:/app/backup
+    restart: unless-stopped
+
+volumes:
+  pgdata:

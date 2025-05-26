@@ -645,13 +645,34 @@ def edit_asset(asset_id):
 def backup_database():
     backup_folder = os.path.join(os.getcwd(), 'backup')
     os.makedirs(backup_folder, exist_ok=True)
-    source_db = os.path.join(os.getcwd(), 'instance', 'assets.db')
-    backup_db = os.path.join(backup_folder, f'assets_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.db')
-    try:
-        shutil.copy2(source_db, backup_db)
-        flash('Резервну копію бази даних створено успішно.', 'success')
-    except Exception as e:
-        flash(f'Помилка при створенні резервної копії: {str(e)}', 'danger')
+    db_url = app.config['SQLALCHEMY_DATABASE_URI']
+    if db_url.startswith('sqlite'):  # SQLite backup
+        source_db = os.path.join(os.getcwd(), 'instance', 'assets.db')
+        backup_db = os.path.join(backup_folder, f'assets_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.db')
+        try:
+            shutil.copy2(source_db, backup_db)
+            flash('Резервну копію бази даних створено успішно (SQLite).', 'success')
+        except Exception as e:
+            flash(f'Помилка при створенні резервної копії: {str(e)}', 'danger')
+    elif db_url.startswith('postgresql'):
+        # Формуємо ім'я файлу дампу
+        backup_file = os.path.join(backup_folder, f'assets_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.sql')
+        # Парсимо дані підключення
+        import re
+        m = re.match(r"postgresql://(.*?):(.*?)@(.*?):(.*?)/(.*)", db_url)
+        if m:
+            user, password, host, port, dbname = m.groups()
+            # Формуємо команду pg_dump
+            cmd = f"PGPASSWORD={password} pg_dump -h {host} -p {port} -U {user} -F c -b -v -f '{backup_file}' {dbname}"
+            result = os.system(cmd)
+            if result == 0:
+                flash('Резервну копію бази даних створено успішно (PostgreSQL).', 'success')
+            else:
+                flash('Помилка при створенні резервної копії PostgreSQL.', 'danger')
+        else:
+            flash('Не вдалося розпарсити DATABASE_URL для резервного копіювання.', 'danger')
+    else:
+        flash('Невідомий тип бази даних для резервного копіювання.', 'danger')
     return redirect(url_for('index'))
 
 if __name__ == "__main__":
