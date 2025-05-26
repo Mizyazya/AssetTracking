@@ -18,6 +18,8 @@ RUN apt-get update \
     && apt-get install -y postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
+RUN apt-get update && apt-get install -y netcat && rm -rf /var/lib/apt/lists/*
+
 COPY wait-for-it.sh /wait-for-it.sh
 RUN chmod +x /wait-for-it.sh
 
