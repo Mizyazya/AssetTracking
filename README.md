@@ -54,4 +54,7 @@
 
 ---
 
-Автор: Artem_Wolf і GitHub Copilot!
+## Ліцензія
+Цей проект розповсюджується під [ліцензією MIT](./LICENSE).
+
+## Автор: Artem_Wolf і GitHub Copilot!
