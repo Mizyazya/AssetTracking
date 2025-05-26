@@ -43,7 +43,7 @@
    ```
 4. Встановіть залежності:
    ```sh
-   pip install flask flask_sqlalchemy
+   pip install -r requirements.txt
    ```
 5. Переконайтесь, що у папці instance/ є файл бази даних assets.db (або створіть його через ініціалізацію міграціями, якщо потрібно).
 6. Запустіть сервер:
