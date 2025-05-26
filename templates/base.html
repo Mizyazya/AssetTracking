@@ -30,6 +30,16 @@
                 <a class="nav-link{% if request.endpoint == 'people' %} active{% endif %}" href="{{ url_for('people') }}"><i class="fa-solid fa-user"></i> Люди</a>
                 <a class="nav-link{% if request.endpoint == 'locations' %} active{% endif %}" href="{{ url_for('locations') }}"><i class="fa-solid fa-location-dot"></i> Локації</a>
                 <a class="nav-link{% if request.endpoint == 'all_tasks' %} active{% endif %}" href="{{ url_for('all_tasks') }}"><i class="fa-solid fa-list-check"></i> Всі задачі</a>
+                {% if current_user.is_authenticated %}
+                    {% if current_user.is_admin() %}
+                        <a class="nav-link{% if request.endpoint == 'users' %} active{% endif %}" href="{{ url_for('users') }}"><i class="fa-solid fa-users"></i> Користувачі</a>
+                    {% endif %}
+                    <span class="navbar-text mx-2"><i class="fa-solid fa-user"></i> {{ current_user.username }}</span>
+                    <a class="nav-link{% if request.endpoint == 'profile' %} active{% endif %}" href="{{ url_for('profile') }}"><i class="fa-solid fa-key"></i> Змінити пароль</a>
+                    <a class="nav-link" href="{{ url_for('logout') }}"><i class="fa-solid fa-right-from-bracket"></i> Вийти</a>
+                {% else %}
+                    <a class="nav-link{% if request.endpoint == 'login' %} active{% endif %}" href="{{ url_for('login') }}"><i class="fa-solid fa-right-to-bracket"></i> Вхід</a>
+                {% endif %}
                 <button type="button" class="theme-toggle btn btn-link p-0" id="theme-toggle" title="Змінити тему" aria-label="Змінити тему" tabindex="0">
                     <i class="fa-solid fa-moon" id="theme-icon" style="color: #ffc107; font-size: 1.5rem;"></i>
                 </button>

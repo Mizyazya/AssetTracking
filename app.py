@@ -1,22 +1,37 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, abort, session
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from collections import defaultdict
 from sqlalchemy import text
 import pytz
 import shutil
 from dotenv import load_dotenv
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask import session
+import re
+from functools import wraps
 
 load_dotenv()
+
+# Debug: print current DATABASE_URL from environment
+print("DATABASE_URL in env:", os.environ.get('DATABASE_URL'))
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
 db_url = os.environ.get('DATABASE_URL')
-if db_url:
+if db_url and db_url.strip():
+    if 'localhost' in db_url or '127.0.0.1' in db_url:
+        print(f"[INFO] Використовується локальний PostgreSQL: {db_url}")
+    elif '@db:' in db_url:
+        print("[WARNING] DATABASE_URL містить '@db:'. Якщо ви запускаєте локально (не через Docker Compose), змініть DATABASE_URL на порожній рядок або на SQLite. Зараз буде спроба підключення до контейнера 'db', що призведе до помилки, якщо він не запущений.")
+    else:
+        print(f"[INFO] Використовується DATABASE_URL: {db_url}")
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 else:
+    print("[INFO] DATABASE_URL не задано або порожній. Використовується SQLite (assets.db)")
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///assets.db'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -25,6 +40,11 @@ db = SQLAlchemy(app)
 
 TIMEZONE = os.environ.get('TIMEZONE', 'Europe/Kyiv')
 KYIV_TZ = pytz.timezone(TIMEZONE)
+
+# === Flask-Login setup ===
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
 
 # === Models ===
 class Location(db.Model):
@@ -71,6 +91,50 @@ class Task(db.Model):
     closed_at = db.Column(db.DateTime, nullable=True)
     close_comment = db.Column(db.Text)
     asset = db.relationship('Asset', backref=db.backref('tasks', lazy=True))
+
+# === User model ===
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    role = db.Column(db.String(10), default='user')  # 'admin' або 'user'
+    sessions = db.relationship('UserSession', backref='user', cascade="all, delete-orphan", lazy=True)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def is_admin(self):
+        return self.role == 'admin'
+
+    def is_user(self):
+        return self.role == 'user'
+
+# --- Модель для логування сесій і входів ---
+class UserSession(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    session_id = db.Column(db.String(128), nullable=False, unique=True)
+    login_time = db.Column(db.DateTime, default=datetime.utcnow)
+    logout_time = db.Column(db.DateTime, nullable=True)
+    ip = db.Column(db.String(64), nullable=True)
+    user_agent = db.Column(db.String(256), nullable=True)
+    active = db.Column(db.Boolean, default=True)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# --- Декоратор для захисту адмінських сторінок ---
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin():
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
 
 # === Routes ===
 @app.route('/')
@@ -677,9 +741,254 @@ def backup_database():
         flash('Невідомий тип бази даних для резервного копіювання.', 'danger')
     return redirect(url_for('index'))
 
+# === Flask-Login: маршрути для входу/виходу ===
+from flask import render_template_string
+
+# --- Логування входу ---
+from uuid import uuid4
+
+@app.before_request
+def update_session_activity():
+    if current_user.is_authenticated:
+        session.permanent = True
+        app.permanent_session_lifetime = 1800  # 30 хвилин
+        session.modified = True
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    error = None
+    if request.method == 'POST':
+        username = request.form['username'].strip().lower()
+        password = request.form['password']
+        user = User.query.filter(db.func.lower(User.username) == username).first()
+        if user and user.check_password(password):
+            login_user(user)
+            # --- Логування входу ---
+            sid = str(uuid4())
+            session['sid'] = sid
+            db.session.add(UserSession(user_id=user.id, session_id=sid, ip=request.remote_addr, user_agent=request.headers.get('User-Agent')))
+            db.session.commit()
+            return redirect(url_for('index'))
+        else:
+            error = 'Невірний логін або пароль'
+    return render_template('login.html', error=error)
+
+@app.route('/logout')
+@login_required
+def logout():
+    # --- Логування виходу ---
+    sid = session.get('sid')
+    if sid:
+        usess = UserSession.query.filter_by(session_id=sid, active=True).first()
+        if usess:
+            usess.active = False
+            usess.logout_time = datetime.utcnow()
+            db.session.commit()
+    logout_user()
+    session.pop('sid', None)
+    return redirect(url_for('login'))
+
+# --- Сторінка активних сесій для адміна ---
+@app.route('/user_sessions/<int:user_id>')
+@login_required
+@admin_required
+def user_sessions(user_id):
+    user = User.query.get_or_404(user_id)
+    sessions = UserSession.query.filter_by(user_id=user.id).order_by(UserSession.login_time.desc()).all()
+    return render_template('user_sessions.html', user=user, sessions=sessions)
+
+# --- Сторінка своїх сесій для користувача ---
+@app.route('/my_sessions')
+@login_required
+def my_sessions():
+    sessions = UserSession.query.filter_by(user_id=current_user.id).order_by(UserSession.login_time.desc()).all()
+    return render_template('user_sessions.html', user=current_user, sessions=sessions, self_view=True)
+
+# --- Завершення сесії (адмін може закрити будь-яку, користувач — свою) ---
+@app.route('/close_session/<int:session_id>', methods=['POST'])
+@login_required
+def close_session(session_id):
+    usess = UserSession.query.get_or_404(session_id)
+    if current_user.is_admin() or (usess.user_id == current_user.id):
+        if usess.active:
+            # Замість видалення user_id (яке спричиняє IntegrityError), просто ставимо active=False і час виходу
+            usess.active = False
+            usess.logout_time = datetime.utcnow()
+            db.session.commit()
+            flash('Сесію завершено', 'success')
+    return redirect(request.referrer or url_for('index'))
+
+# --- Валідація пароля ---
+def validate_password(password):
+    if len(password) < 8 or len(password) > 64:
+        return False
+    if not re.search(r'[A-Z]', password):
+        return False
+    if not re.search(r'[a-z]', password):
+        return False
+    if not re.search(r'\d', password):
+        return False
+    if not re.search(r'[^A-Za-z0-9]', password):
+        return False
+    return True
+
+# --- Використання валідації при створенні/зміні пароля ---
+# у add_user, edit_user, profile
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        password_confirm = request.form['password_confirm']
+        if password != password_confirm:
+            flash('Паролі не співпадають', 'danger')
+            return redirect(url_for('register'))
+        if User.query.filter_by(username=username).first():
+            flash('Користувач з таким логіном вже існує', 'danger')
+            return redirect(url_for('register'))
+        new_user = User(username=username)
+        new_user.set_password(password)
+        db.session.add(new_user)
+        db.session.commit()
+        flash('Реєстрація успішна. Тепер ви можете увійти.', 'success')
+        return redirect(url_for('login'))
+    return render_template('register.html')
+
+@app.route('/users')
+@login_required
+@admin_required
+def users():
+    users = User.query.all()
+    return render_template('users.html', users=users)
+
+@app.route('/add_user', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def add_user():
+    error = None
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        role = request.form.get('role', 'user')
+        if User.query.filter(db.func.lower(User.username) == username.lower()).first():
+            error = 'Користувач з таким логіном вже існує'
+        elif not validate_password(password):
+            error = 'Пароль не відповідає вимогам безпеки.'
+        else:
+            user = User(username=username, role=role)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            return redirect(url_for('users'))
+    return render_template('add_user.html', error=error)
+
+@app.route('/edit_user/<int:user_id>', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def edit_user(user_id):
+    user = User.query.get_or_404(user_id)
+    error = None
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        role = request.form.get('role', user.role)
+        if username.lower() != user.username.lower() and User.query.filter(db.func.lower(User.username) == username.lower()).first():
+            error = 'Користувач з таким логіном вже існує'
+        elif password and not validate_password(password):
+            error = 'Пароль не відповідає вимогам безпеки.'
+        else:
+            user.username = username
+            if password:
+                user.set_password(password)
+            user.role = role
+            db.session.commit()
+            return redirect(url_for('users'))
+    return render_template('edit_user.html', user=user, error=error)
+
+@app.route('/delete_user/<int:user_id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.is_admin() and User.query.filter_by(role='admin').count() == 1:
+        flash('Неможливо видалити останнього адміністратора!', 'danger')
+        return redirect(url_for('users'))
+    db.session.delete(user)
+    db.session.commit()
+    flash('Користувача видалено', 'success')
+    return redirect(url_for('users'))
+
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    user = current_user
+    error = None
+    if request.method == 'POST':
+        password = request.form['password']
+        if not validate_password(password):
+            error = 'Пароль не відповідає вимогам безпеки.'
+        else:
+            user.set_password(password)
+            db.session.commit()
+            flash('Пароль змінено', 'success')
+    return render_template('edit_user.html', user=user, error=error, self_edit=True)
+
+# === Захист усіх основних сторінок ===
+from functools import wraps
+
+def protect_all_routes(app):
+    for rule in app.url_map.iter_rules():
+        if rule.endpoint not in ('login', 'static') and rule.endpoint in app.view_functions:
+            view_func = app.view_functions[rule.endpoint]
+            if not getattr(view_func, 'is_login_required', False):
+                app.view_functions[rule.endpoint] = login_required(view_func)
+                app.view_functions[rule.endpoint].is_login_required = True
+
+protect_all_routes(app)
+
+# === Створення таблиць і першого користувача, якщо немає жодного ===
+with app.app_context():
+    db.create_all()
+    if not User.query.first():
+        user = User(username='admin', role='admin')
+        user.set_password('admin')
+        db.session.add(user)
+        db.session.commit()
+        print('Створено користувача admin/admin (змініть пароль після входу)')
+
+app.permanent_session_lifetime = timedelta(minutes=30)
+
+@app.before_request
+def make_session_permanent():
+    session.permanent = True
+
+@app.before_request
+def check_session_valid():
+    if current_user.is_authenticated:
+        sid = session.get('sid')
+        if not sid:
+            logout_user()
+            session.clear()
+            return redirect(url_for('login'))
+        usess = UserSession.query.filter_by(session_id=sid, active=True).first()
+        # Якщо сесія неактивна або user_id некоректний — розлогінити
+        if not usess or not usess.user_id:
+            if usess:
+                try:
+                    usess.active = False
+                    usess.logout_time = datetime.utcnow()
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+            logout_user()
+            session.clear()
+            flash('Сесію завершено адміністратором або з іншого пристрою.', 'warning')
+            return redirect(url_for('login'))
+
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
     app.run(debug=True)
 else:
     # Gunicorn entrypoint: створення таблиць при першому запуску

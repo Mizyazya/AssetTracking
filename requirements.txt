@@ -5,3 +5,5 @@ python-dotenv
 psycopg2-binary
 gunicorn
 waitress
+flask-login
+werkzeug

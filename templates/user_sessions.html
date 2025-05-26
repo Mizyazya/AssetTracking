@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5" style="max-width:700px;">
+  <div class="card shadow">
+    <div class="card-body">
+      <h3 class="mb-4">Сесії користувача: {{ user.username }}</h3>
+      <table class="table table-bordered table-striped">
+        <thead>
+          <tr>
+            <th>IP</th>
+            <th>Браузер</th>
+            <th>Час входу</th>
+            <th>Час виходу</th>
+            <th>Статус</th>
+            <th>Дія</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in sessions %}
+          <tr>
+            <td>{{ s.ip or '' }}</td>
+            <td style="max-width:200px; word-break:break-all;">{{ s.user_agent or '' }}</td>
+            <td>{{ s.login_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>{% if s.logout_time %}{{ s.logout_time.strftime('%Y-%m-%d %H:%M:%S') }}{% else %}-{% endif %}</td>
+            <td>{% if s.active %}<span class="badge bg-success">Активна</span>{% else %}<span class="badge bg-secondary">Завершена</span>{% endif %}</td>
+            <td>
+              {% if s.active and (self_view or current_user.is_admin()) %}
+              <form method="post" action="{{ url_for('close_session', session_id=s.id) }}" style="display:inline;">
+                <button type="submit" class="btn btn-sm btn-danger">Завершити</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <a href="{{ url_for('users') if current_user.is_admin() else url_for('profile') }}" class="btn btn-link mt-3">Назад</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,3 +1,8 @@
+# =====================
+#   Asset Tracking Site
+#   Version: V1.3
+# =====================
+
 # Asset Tracking Site — V1.0-Stable
 
 ## Опис

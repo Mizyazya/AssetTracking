@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5" style="max-width:400px;">
+  <div class="card shadow">
+    <div class="card-body">
+      <h3 class="mb-4 text-center">Вхід</h3>
+      <form method="post">
+        <div class="mb-3">
+          <input name="username" class="form-control" placeholder="Логін" required autofocus>
+        </div>
+        <div class="mb-3">
+          <input name="password" type="password" class="form-control" placeholder="Пароль" required>
+        </div>
+        {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+        <button type="submit" class="btn btn-primary w-100">Увійти</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

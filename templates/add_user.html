@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5" style="max-width:400px;">
+  <div class="card shadow">
+    <div class="card-body">
+      <h3 class="mb-4">Додати користувача</h3>
+      <form method="post">
+        <div class="mb-3">
+          <input name="username" class="form-control" placeholder="Логін" required>
+        </div>
+        <div class="mb-3">
+          <input name="password" id="password" type="password" class="form-control" placeholder="Пароль" required oninput="validatePasswordInput(this)">
+          <div id="passwordHelp" class="form-text">
+            Пароль має містити:
+            <ul class="mb-0">
+              <li id="pwlen" class="text-danger">Мінімум 8 символів</li>
+              <li id="pwupper" class="text-danger">Велику літеру</li>
+              <li id="pwlower" class="text-danger">Малу літеру</li>
+              <li id="pwdigit" class="text-danger">Цифру</li>
+              <li id="pwspec" class="text-danger">Спецсимвол</li>
+            </ul>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label for="role">Роль</label>
+          <select name="role" id="role" class="form-control">
+            <option value="user">Користувач</option>
+            <option value="admin">Адмін</option>
+          </select>
+        </div>
+        {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+        <button type="submit" class="btn btn-success w-100">Додати</button>
+      </form>
+      <a href="{{ url_for('users') }}" class="btn btn-link mt-3">Назад</a>
+    </div>
+  </div>
+</div>
+<script>
+function validatePasswordInput(input) {
+  const val = input.value;
+  document.getElementById('pwlen').className = val.length >= 8 ? 'text-success' : 'text-danger';
+  document.getElementById('pwupper').className = /[A-Z]/.test(val) ? 'text-success' : 'text-danger';
+  document.getElementById('pwlower').className = /[a-z]/.test(val) ? 'text-success' : 'text-danger';
+  document.getElementById('pwdigit').className = /\d/.test(val) ? 'text-success' : 'text-danger';
+  document.getElementById('pwspec').className = /[^A-Za-z0-9]/.test(val) ? 'text-success' : 'text-danger';
+}
+</script>
+{% endblock %}

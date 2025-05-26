@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5" style="max-width:400px;">
+  <div class="card shadow">
+    <div class="card-body">
+      <h3 class="mb-4">Змінити пароль для {{ user.username }}</h3>
+      <form method="post">
+        {% if not self_edit %}
+        <div class="mb-3">
+          <label for="username">Логін</label>
+          <input name="username" id="username" type="text" class="form-control" value="{{ user.username }}" required {% if self_edit %}readonly{% endif %}>
+        </div>
+        <div class="mb-3">
+          <label for="role">Роль</label>
+          <select name="role" id="role" class="form-control">
+            <option value="user" {% if user.role == 'user' %}selected{% endif %}>Користувач</option>
+            <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Адмін</option>
+          </select>
+        </div>
+        {% endif %}
+        <div class="mb-3">
+          <input name="password" id="password" type="password" class="form-control" placeholder="Новий пароль" required oninput="validatePasswordInput(this)">
+          <div id="passwordHelp" class="form-text">
+            Пароль має містити:
+            <ul class="mb-0">
+              <li id="pwlen" class="text-danger">Мінімум 8 символів</li>
+              <li id="pwupper" class="text-danger">Велику літеру</li>
+              <li id="pwlower" class="text-danger">Малу літеру</li>
+              <li id="pwdigit" class="text-danger">Цифру</li>
+              <li id="pwspec" class="text-danger">Спецсимвол</li>
+            </ul>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Зберегти</button>
+      </form>
+      {% if not self_edit %}
+      <a href="{{ url_for('users') }}" class="btn btn-link mt-3">Назад</a>
+      {% endif %}
+      {% if self_edit %}
+      <a href="{{ url_for('my_sessions') }}" class="btn btn-link mt-3">Мої сесії</a>
+      {% endif %}
+      {% if current_user.is_admin() and not self_edit %}
+      <a href="{{ url_for('user_sessions', user_id=user.id) }}" class="btn btn-link mt-3">Сесії користувача</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<script>
+function validatePasswordInput(input) {
+  const val = input.value;
+  document.getElementById('pwlen').className = val.length >= 8 ? 'text-success' : 'text-danger';
+  document.getElementById('pwupper').className = /[A-Z]/.test(val) ? 'text-success' : 'text-danger';
+  document.getElementById('pwlower').className = /[a-z]/.test(val) ? 'text-success' : 'text-danger';
+  document.getElementById('pwdigit').className = /\d/.test(val) ? 'text-success' : 'text-danger';
+  document.getElementById('pwspec').className = /[^A-Za-z0-9]/.test(val) ? 'text-success' : 'text-danger';
+}
+</script>
+{% endblock %}
