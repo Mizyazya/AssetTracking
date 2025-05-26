@@ -18,6 +18,9 @@ RUN apt-get update \
     && apt-get install -y postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
+COPY wait-for-it.sh /wait-for-it.sh
+RUN chmod +x /wait-for-it.sh
+
 EXPOSE 8000
 
 CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "app:app"]
