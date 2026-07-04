@@ -30,7 +30,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           ))}
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-500">{user.username}</span>
+          {user.role === 'admin' && (
+            <Link href="/users" className="py-3 text-sm text-gray-600 hover:text-gray-900">
+              Адмін
+            </Link>
+          )}
+          <Link href="/profile" className="py-3 text-sm text-gray-600 hover:text-gray-900">
+            {user.username}
+          </Link>
           <form action={logout}>
             <button type="submit" className="text-sm text-gray-500 hover:text-gray-900 underline">
               Вийти
