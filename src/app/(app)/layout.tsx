@@ -1,6 +1,8 @@
 import Link from 'next/link';
+import { headers } from 'next/headers';
 import { requireUser } from '@/lib/session';
 import { logout } from '@/lib/auth-actions';
+import { backupDatabase } from '@/lib/backup-action';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +15,8 @@ const navLinks = [
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { user } = await requireUser();
+  const hdrs = await headers();
+  const returnTo = hdrs.get('x-invoke-path') ?? '/';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -46,6 +50,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </nav>
       <main className="flex-1 p-6">{children}</main>
+
+      {user.role === 'admin' && (
+        <footer className="border-t border-gray-200 bg-white px-6 py-3 flex justify-end">
+          <form action={backupDatabase}>
+            <input type="hidden" name="return_to" value={returnTo} />
+            <button type="submit" className="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+              Резервна копія БД
+            </button>
+          </form>
+        </footer>
+      )}
     </div>
   );
 }
