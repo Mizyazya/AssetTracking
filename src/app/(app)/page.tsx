@@ -184,7 +184,7 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
       </div>
 
       {/* Filters */}
-      <form method="get" className="rounded border border-gray-200 bg-gray-50 p-3">
+      <form method="get" className="rounded border border-gray-200 bg-white p-3">
         <div className="flex flex-wrap gap-2">
           <input name="name" defaultValue={fName} placeholder="Назва" className={inputCls} />
           <input name="serial" defaultValue={fSerial} placeholder="Серійний номер" className={inputCls} />
@@ -221,9 +221,9 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
       </form>
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded border border-gray-200 bg-white">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="bg-gray-50">
             <tr className="border-b border-gray-200 text-left text-gray-700">
               <th className="pb-2 pr-4 font-medium">
                 <a href={sortLink('name')} className="hover:text-gray-900">
