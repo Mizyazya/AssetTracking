@@ -21,29 +21,29 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen flex flex-col">
       <nav className="bg-white border-b border-gray-200 px-6 py-0 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <span className="font-semibold text-gray-900 py-3">Облік майна</span>
+        <div className="flex items-center gap-1">
+          <span className="font-semibold text-gray-900 py-3 mr-5 tracking-tight">Облік майна</span>
           {navLinks.map(({ href, label }) => (
             <Link
               key={href}
               href={href}
-              className="py-3 text-sm text-gray-600 hover:text-gray-900 border-b-2 border-transparent hover:border-gray-400"
+              className="px-3 py-3 text-sm text-gray-600 hover:text-gray-900 border-b-2 border-transparent hover:border-blue-500 transition-colors"
             >
               {label}
             </Link>
           ))}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1">
           {user.role === 'admin' && (
-            <Link href="/users" className="py-3 text-sm text-gray-600 hover:text-gray-900">
+            <Link href="/users" className="px-3 py-3 text-sm text-gray-600 hover:text-gray-900 transition-colors">
               Адмін
             </Link>
           )}
-          <Link href="/profile" className="py-3 text-sm text-gray-600 hover:text-gray-900">
+          <Link href="/profile" className="px-3 py-3 text-sm text-gray-600 hover:text-gray-900 transition-colors">
             {user.username}
           </Link>
-          <form action={logout}>
-            <button type="submit" className="text-sm text-gray-500 hover:text-gray-900 underline">
+          <form action={logout} className="ml-1">
+            <button type="submit" className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-50 rounded transition-colors">
               Вийти
             </button>
           </form>
@@ -55,7 +55,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <footer className="border-t border-gray-200 bg-white px-6 py-3 flex justify-end">
           <form action={backupDatabase}>
             <input type="hidden" name="return_to" value={returnTo} />
-            <button type="submit" className="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+            <button type="submit" className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 shadow-xs transition-colors">
               Резервна копія БД
             </button>
           </form>
