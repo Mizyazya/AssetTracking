@@ -35,7 +35,7 @@
                         <a class="nav-link{% if request.endpoint == 'users' %} active{% endif %}" href="{{ url_for('users') }}"><i class="fa-solid fa-users"></i> Користувачі</a>
                     {% endif %}
                     <span class="navbar-text mx-2"><i class="fa-solid fa-user"></i> {{ current_user.username }}</span>
-                    <a class="nav-link{% if request.endpoint == 'profile' %} active{% endif %}" href="{{ url_for('profile') }}"><i class="fa-solid fa-key"></i> Змінити пароль</a>
+                    <a class="nav-link{% if request.endpoint == 'profile' %} active{% endif %}" href="{{ url_for('profile') }}"><i class="fa-solid fa-key"></i> Поміняти пароль</a>
                     <a class="nav-link" href="{{ url_for('logout') }}"><i class="fa-solid fa-right-from-bracket"></i> Вийти</a>
                 {% else %}
                     <a class="nav-link{% if request.endpoint == 'login' %} active{% endif %}" href="{{ url_for('login') }}"><i class="fa-solid fa-right-to-bracket"></i> Вхід</a>
@@ -53,6 +53,13 @@
         <hr>
         <small>Їнженерка by Artem_Wolf & ChatGPT, GitHub Copilot &copy; {{ year or 2025 }}</small>
         <br>
+        {% if current_user.is_authenticated and current_user.is_admin() %}
+        <form action="{{ url_for('backup_database') }}" method="post" style="display:inline;">
+          <button type="submit" class="btn btn-outline-secondary btn-sm" onclick="return confirm('Створити резервну копію бази даних?')">
+            <i class="fas fa-database"></i> Резервна копія БД
+          </button>
+        </form>
+        {% endif %}
         {% block backup_button %}{% endblock %}
     </div>
     <!-- Toast container -->
