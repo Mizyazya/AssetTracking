@@ -231,8 +231,9 @@ export async function closeTask(formData: FormData) {
   db.update(task).set({ status: 'closed', closedAt: ts, closeComment }).where(eq(task.id, taskId)).run();
   addLog(assetId, 'Задача закрита', `Закрито: ${t.text}${closeComment ? ` (${closeComment})` : ''}`);
 
+  const returnTo = (formData.get('return_to') as string) || `/assets/${assetId}`;
   await setFlash('Задачу закрито.');
-  redirect(`/assets/${assetId}`);
+  redirect(returnTo);
 }
 
 // ── Edit asset ─────────────────────────────────────────────────────────────
