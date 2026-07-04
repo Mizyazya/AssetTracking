@@ -2,65 +2,35 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project overview
+## Project state
 
-A Flask-based asset tracking system (Ukrainian internal tool) for tracking equipment/components, who holds them, their location, and open tasks/tickets against them. UI text, flash messages, and log action strings are in Ukrainian.
+**Assets 2.0** — a rewrite of a Ukrainian-language internal asset-tracking tool (equipment/components, holders, locations, tasks) from Flask to Next.js. The finished Flask app lives in branch **`v1`** (tag `v1.5-final`) and runs in production on the owner's Ubuntu LXC until v2 reaches parity; `main` is v2 under active development. Do not add features to `v1` — critical fixes only.
 
-## Running the app
+**[PORTING.md](PORTING.md) is the contract.** It specifies every behavior v2 must replicate (routes, filters, flash-message texts, edge cases) plus the deliberate deviations from v1. Implement against it; consult `git show v1:app.py` only when the spec is ambiguous. All UI text is Ukrainian — exact strings are in PORTING.md.
 
-There is no test suite, linter, or build step configured in this repo.
+## Commands
 
-Local (SQLite, no Docker):
-```pwsh
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python app.py                 # dev server on :5000, debug=True
-# or
-python -m waitress --listen=0.0.0.0:8000 app:app   # (run.ps1)
 ```
-```sh
-gunicorn -w 4 -b 0.0.0.0:8000 app:app              # (run.sh)
+npm run dev          # dev server on :3000
+npm run build        # production build
+npm run lint
+npm run db:generate  # drizzle-kit: generate migration from src/db/schema.ts changes
+npm run db:migrate   # apply migrations to data/assets.db
+npm run db:import [path]  # one-time import of v1 SQLite data (default: instance/assets.db)
 ```
 
-Docker Compose (Postgres, production-like):
-```pwsh
-docker compose up --build
-```
-Site is served on `http://localhost:8000`. The `web` service waits on `db:5432` via `wait-for-it.sh` before starting gunicorn. `docker-compose.yml` bind-mounts `instance/`, `backup/`, `static/`, `templates/`, and `wait-for-it.sh` from host paths under `/volume1/docker/trackerasset/...` (this targets a Synology NAS deployment) — expect these host paths to not exist in a generic dev environment.
+There is no test suite yet. The DB file is `data/assets.db` (created on first run, gitignored along with `backup/`).
 
 ## Architecture
 
-**Single-file monolith**: all models, routes, auth logic, and app bootstrap live in [app.py](app.py). There are no blueprints, no `models.py`/`routes.py` split, and no application factory — `app`/`db` are module-level globals created at import time.
+- **Stack**: Next.js App Router (TypeScript) + Drizzle ORM + better-sqlite3 + Tailwind 4. Server-rendered pages with server actions for mutations — mirrors v1's page→POST-form→redirect style.
+- **Schema** ([src/db/schema.ts](src/db/schema.ts)): table/column names deliberately match v1's SQLite schema (snake_case, singular) so `scripts/import-v1.ts` copies rows without renaming. Nullability also mirrors v1 — don't tighten it without checking legacy data.
+- **Component ledger** (the domain's core invariant, PORTING.md §2): components have no current-holders table; who holds how many is always computed by replaying `asset_log` rows (`'Видано'` +qty, `'Повернення'`/`'Повернено'` −qty). This logic must live ONLY in `src/lib/ledger.ts` — v1's biggest flaw was 6 copies of this loop. Action strings are sentinels stored in historical data: never rename or translate them.
+- **Passwords** ([src/lib/password.ts](src/lib/password.ts)): verifies legacy werkzeug hashes (`pbkdf2:...`/`scrypt:...`) and v2's own `scrypt$...` format; werkzeug hashes are transparently re-hashed on successful login (`needsRehash`).
+- **Sessions** (PORTING.md §3): signed cookie + `user_session` DB row; 30-minute sliding lifetime; every request must check the DB row is still `active` — that's how admin force-logout works.
+- **Timestamps**: stored as UTC ISO strings (`...Z`), displayed in `TIMEZONE` env (default Europe/Kyiv). v1 stored a mix of UTC and Kyiv time — the import script normalizes.
+- **Auth rule**: every route except `/login` requires login; admin-only areas are user management and session administration. Default bootstrap user `admin`/`admin` when the user table is empty.
 
-### Database selection
-`DATABASE_URL` env var (loaded via `.env`) selects Postgres; if unset/empty, falls back to local SQLite at `instance/assets.db`. Tables and a default `admin`/`admin` user are auto-created at import time (both under `if __name__ == "__main__"` and the `else` gunicorn-import branch) if no user exists yet — there are no migrations.
+## Environment
 
-### Domain model
-- `Location` → has many `Person`
-- `Person` → belongs to a `Location`, holds `Asset`s (via `Asset.current_holder_id`)
-- `Asset` has a `type`: `'active'` (single current holder, tracked directly on `current_holder_id`) or `'component'` (quantity-based, no dedicated holdings table — see below)
-- `AssetLog` is the append-only ledger of everything that happens to an asset (issue/return/transfer/creation/task events)
-- `Task` — open/closed tickets against an `Asset` (only shown for `type == 'active'` assets)
-- `User` (Flask-Login `UserMixin`, role `admin`/`user`) and `UserSession` (custom login/logout/activity audit trail, separate from Flask's session)
-
-### Component quantity tracking (important, non-obvious)
-For `type == 'component'` assets there is **no table of current holdings**. Who holds how many is recomputed on every read by replaying that asset's `AssetLog` rows in timestamp order and summing quantities:
-- `action == 'Видано'` (issued) → `+quantity` for `log.person_id`
-- `action in ('Повернення', 'Повернено')` (returned) → `-quantity` for `log.person_id`
-
-This exact replay loop is duplicated across `index`, `asset_detail`, `person_detail`, `location_detail`, `assign_asset`, and `return_asset` in app.py. If you change component issue/return semantics or add a new action string, you must update every occurrence, and any new "quantity-affecting" action string needs to be added to all of them consistently. Action strings (`'Видано'`, `'Повернено'`, `'Повернення'`, `'Передано'`, `'Отримано'`, `'Створено'`, `'Поставка'`, `'Задача'`, `'Задача закрита'`) are treated as sentinel values compared by exact string match — there's no enum.
-
-### Auth and session handling
-- `protect_all_routes()` runs once at import time and wraps every registered view (except `login` and `static`) in `login_required`, so new routes are automatically auth-gated without needing the decorator explicitly — don't rely on a route being public without checking this function.
-- `admin_required` (custom decorator) gates admin-only routes (`/users`, `/add_user`, `/edit_user`, `/delete_user`, `/user_sessions/<id>`) and `abort(403)`s otherwise.
-- Beyond Flask-Login's session, a parallel `UserSession` DB record tracks each login (`session['sid']` ties the two together). `before_request` hooks (`check_session_valid`) force logout if the `UserSession` was deactivated elsewhere (e.g., an admin closed it via `/close_session/<id>`) or if `sid` is missing — this is how remote session termination and the "single active session" behavior work.
-- Session lifetime is fixed at 30 minutes (`app.permanent_session_lifetime`), refreshed on every authenticated request.
-- A user cannot change their own `role` when editing their own profile (`self_edit` flag in `edit_user`), and the last remaining admin cannot be deleted.
-- Password policy is enforced by `validate_password()`: 8–64 chars, needs upper, lower, digit, and a symbol.
-
-### Backup
-`/backup_database` (POST) writes into `backup/`: a raw file copy for SQLite, or a `pg_dump` custom-format dump (shelled out via `os.system`, parsing `DATABASE_URL` with a regex) for Postgres.
-
-### Templates
-Server-rendered Jinja2 templates in `templates/`, styled with a locally-vendored Bootstrap (`static/css/bootstrap.min.css`, `static/js/bootstrap.bundle.min.js`) and Font Awesome — no frontend build pipeline, no npm/node involved.
+`.env`: `SECRET_KEY` (required in production), `TIMEZONE` (optional, default Europe/Kyiv). DB path is a constant, not env. Deployment target is Ubuntu LXC with Node 22 + systemd; deploy flow is `git pull → npm ci → npm run build → systemctl restart` (Phase 8 of the plan — not set up yet).
