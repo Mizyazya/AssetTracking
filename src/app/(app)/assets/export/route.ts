@@ -16,8 +16,8 @@ export async function GET(req: NextRequest) {
   const fName = sp.get('name') ?? '';
   const fSerial = sp.get('serial') ?? '';
   const fType = sp.get('type') ?? '';
-  const fPersonId = sp.get('person_id') ? parseInt(sp.get('person_id')!) : null;
-  const fLocationId = sp.get('location_id') ? parseInt(sp.get('location_id')!) : null;
+  const fPersonIds = sp.getAll('person_id').map(v => parseInt(v)).filter(n => !Number.isNaN(n));
+  const fLocationIds = sp.getAll('location_id').map(v => parseInt(v)).filter(n => !Number.isNaN(n));
 
   const conds = [];
   if (fName) conds.push(like(asset.name, `%${fName}%`));
@@ -67,16 +67,21 @@ export async function GET(req: NextRequest) {
       return { a, holderName, locationName };
     })
     .filter(({ a }) => {
-      if (fPersonId) {
-        if (a.type === 'active' && a.currentHolderId !== fPersonId) return false;
-        if (a.type === 'component' && !(ledger.get(a.id) ?? new Map()).has(fPersonId)) return false;
-      }
-      if (fLocationId) {
-        const p = a.type === 'active' && a.currentHolderId ? personMap.get(a.currentHolderId) : null;
-        if (a.type === 'active' && p?.locationId !== fLocationId) return false;
+      if (fPersonIds.length > 0) {
+        if (a.type === 'active' && !(a.currentHolderId != null && fPersonIds.includes(a.currentHolderId))) return false;
         if (a.type === 'component') {
           const holders = ledger.get(a.id) ?? new Map();
-          const matches = Array.from(holders.keys()).some(pid => personMap.get(pid)?.locationId === fLocationId);
+          if (!fPersonIds.some(id => holders.has(id))) return false;
+        }
+      }
+      if (fLocationIds.length > 0) {
+        const p = a.type === 'active' && a.currentHolderId ? personMap.get(a.currentHolderId) : null;
+        if (a.type === 'active' && !(p?.locationId != null && fLocationIds.includes(p.locationId))) return false;
+        if (a.type === 'component') {
+          const holders = ledger.get(a.id) ?? new Map();
+          const matches = Array.from(holders.keys()).some(
+            pid => personMap.get(pid)?.locationId != null && fLocationIds.includes(personMap.get(pid)!.locationId!),
+          );
           if (!matches) return false;
         }
       }

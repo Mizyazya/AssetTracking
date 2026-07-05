@@ -8,6 +8,8 @@ import { holdersForAssets } from '@/lib/ledger';
 import { formatDate } from '@/lib/time';
 import { AddAssetModal } from '@/components/AddAssetModal';
 import { AutoSubmitForm } from '@/components/AutoSubmitForm';
+import { MultiSelectSearch } from '@/components/MultiSelectSearch';
+import { SegmentedFilter } from '@/components/SegmentedFilter';
 import { bulkTransferAssets } from '@/lib/asset-actions';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +22,11 @@ function str(v: string | string[] | undefined): string {
   return Array.isArray(v) ? (v[0] ?? '') : (v ?? '');
 }
 
+function numArr(v: string | string[] | undefined): number[] {
+  const list = Array.isArray(v) ? v : v ? [v] : [];
+  return list.map(x => parseInt(x)).filter(n => !Number.isNaN(n));
+}
+
 export default async function HomePage({ searchParams }: { searchParams: SP }) {
   await requireUser();
   const sp = await searchParams;
@@ -29,8 +36,8 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
   const fName = str(sp.name);
   const fSerial = str(sp.serial);
   const fType = str(sp.type);
-  const fPersonId = sp.person_id ? parseInt(str(sp.person_id)) : null;
-  const fLocationId = sp.location_id ? parseInt(str(sp.location_id)) : null;
+  const fPersonIds = numArr(sp.person_id);
+  const fLocationIds = numArr(sp.location_id);
   const sortBy = str(sp.sort) || 'created_at';
   const sortDir = str(sp.dir) || 'desc';
 
@@ -48,6 +55,19 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
   const allAssets = db.select({ type: asset.type }).from(asset).all();
   const persons = db.select().from(person).all();
   const locations = db.select().from(location).all();
+  const nameSuggestions = Array.from(new Set(db.select({ name: asset.name }).from(asset).all().map(r => r.name))).sort(
+    (a, b) => a.localeCompare(b, 'uk'),
+  );
+  const serialSuggestions = Array.from(
+    new Set(
+      db
+        .select({ serial: asset.serial })
+        .from(asset)
+        .all()
+        .map(r => r.serial)
+        .filter((s): s is string => !!s),
+    ),
+  ).sort((a, b) => a.localeCompare(b, 'uk'));
   const personMap = new Map(persons.map(p => [p.id, p]));
   const locMap = new Map(locations.map(l => [l.id, l]));
 
@@ -105,18 +125,18 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
   });
 
   let filtered = enriched;
-  if (fPersonId) {
+  if (fPersonIds.length > 0) {
     filtered = filtered.filter(a => {
-      if (a.type === 'active') return a.currentHolderId === fPersonId;
-      return a.compHolders.some(h => h.id === fPersonId);
+      if (a.type === 'active') return a.currentHolderId != null && fPersonIds.includes(a.currentHolderId);
+      return a.compHolders.some(h => fPersonIds.includes(h.id));
     });
   }
-  if (fLocationId) {
+  if (fLocationIds.length > 0) {
     filtered = filtered.filter(a => {
-      if (a.type === 'active') return a.holderLocation?.id === fLocationId;
+      if (a.type === 'active') return a.holderLocation != null && fLocationIds.includes(a.holderLocation.id);
       return a.compHolders.some(h => {
         const p = personMap.get(h.id);
-        return p?.locationId === fLocationId;
+        return p?.locationId != null && fLocationIds.includes(p.locationId);
       });
     });
   }
@@ -135,21 +155,23 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
   const curPage = Math.min(page, totalPages);
   const slice = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
 
-  const hasFilters = fName || fSerial || fType || fPersonId || fLocationId;
+  const hasFilters = fName || fSerial || fType || fPersonIds.length > 0 || fLocationIds.length > 0;
 
   function buildUrl(overrides: Record<string, string | number | null | undefined>) {
-    const base: Record<string, string> = {};
-    if (fName) base.name = fName;
-    if (fSerial) base.serial = fSerial;
-    if (fType) base.type = fType;
-    if (fPersonId) base.person_id = String(fPersonId);
-    if (fLocationId) base.location_id = String(fLocationId);
-    base.sort = sortBy;
-    base.dir = sortDir;
-    base.page = String(curPage);
-    const merged = { ...base, ...overrides };
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries(merged)) {
+    for (const [k, v] of Object.entries(sp)) {
+      if (v == null) continue;
+      if (Array.isArray(v)) {
+        for (const vv of v) p.append(k, vv);
+      } else {
+        p.set(k, v);
+      }
+    }
+    p.set('sort', sortBy);
+    p.set('dir', sortDir);
+    p.set('page', String(curPage));
+    for (const [k, v] of Object.entries(overrides)) {
+      p.delete(k);
       if (v != null && v !== '') p.set(k, String(v));
     }
     const qs = p.toString();
@@ -171,8 +193,8 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     if (fName) p.set('name', fName);
     if (fSerial) p.set('serial', fSerial);
     if (fType) p.set('type', fType);
-    if (fPersonId) p.set('person_id', String(fPersonId));
-    if (fLocationId) p.set('location_id', String(fLocationId));
+    for (const id of fPersonIds) p.append('person_id', String(id));
+    for (const id of fLocationIds) p.append('location_id', String(id));
     const qs = p.toString();
     return qs ? `/assets/export?${qs}` : '/assets/export';
   }
@@ -237,48 +259,76 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
             <div className="space-y-3">
               <div className="field">
                 <label className="field-label">Назва</label>
-                <input name="name" defaultValue={fName} placeholder="Пошук..." className="input" />
+                <input
+                  name="name"
+                  defaultValue={fName}
+                  placeholder="Пошук..."
+                  className="input"
+                  list="name-suggestions"
+                  autoComplete="off"
+                />
+                <datalist id="name-suggestions">
+                  {nameSuggestions.map(n => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
               </div>
               <div className="field">
                 <label className="field-label">Серійний номер</label>
-                <input name="serial" defaultValue={fSerial} placeholder="SN..." className="input" />
+                <input
+                  name="serial"
+                  defaultValue={fSerial}
+                  placeholder="SN..."
+                  className="input"
+                  list="serial-suggestions"
+                  autoComplete="off"
+                />
+                <datalist id="serial-suggestions">
+                  {serialSuggestions.map(s => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
               </div>
               <div className="field">
                 <label className="field-label">Тип</label>
-                <select name="type" defaultValue={fType} className="select">
-                  <option value="">Усі типи</option>
-                  <option value="active">Актив</option>
-                  <option value="component">Компонент</option>
-                </select>
+                <SegmentedFilter
+                  name="type"
+                  defaultValue={fType}
+                  options={[
+                    { value: '', label: 'Усі' },
+                    { value: 'active', label: 'Актив' },
+                    { value: 'component', label: 'Компонент' },
+                  ]}
+                />
               </div>
               <div className="field">
-                <label className="field-label">Держатель</label>
-                <select name="person_id" defaultValue={fPersonId?.toString() ?? ''} className="select">
-                  <option value="">Усі</option>
-                  {persons.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <label className="field-label">Особа</label>
+                <MultiSelectSearch
+                  name="person_id"
+                  placeholder="Пошук особи..."
+                  defaultSelectedIds={fPersonIds}
+                  options={persons.map(p => ({ id: p.id, label: p.name }))}
+                />
               </div>
               <div className="field">
                 <label className="field-label">Локація</label>
-                <select name="location_id" defaultValue={fLocationId?.toString() ?? ''} className="select">
-                  <option value="">Усі</option>
-                  {locations.map(l => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
+                <MultiSelectSearch
+                  name="location_id"
+                  placeholder="Пошук локації..."
+                  defaultSelectedIds={fLocationIds}
+                  options={locations.map(l => ({ id: l.id, label: l.name }))}
+                />
               </div>
               <input type="hidden" name="sort" value={sortBy} />
               <input type="hidden" name="dir" value={sortDir} />
               {hasFilters && (
-                <Link href="/" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
+                // Hard navigation on purpose: clears uncontrolled input values and
+                // client-side filter component state (MultiSelectSearch, SegmentedFilter),
+                // which a soft Link transition would leave stale.
+                // eslint-disable-next-line @next/next/no-html-link-for-pages
+                <a href="/" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
                   Скинути фільтри
-                </Link>
+                </a>
               )}
             </div>
           </AutoSubmitForm>

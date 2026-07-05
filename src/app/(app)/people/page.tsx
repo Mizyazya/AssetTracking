@@ -145,9 +145,11 @@ export default async function PeoplePage({ searchParams }: { searchParams: SP })
                 </select>
               </div>
               {hasFilters && (
-                <Link href="/people" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
+                // Hard navigation on purpose: clears uncontrolled input values a soft Link transition would leave stale.
+                // eslint-disable-next-line @next/next/no-html-link-for-pages
+                <a href="/people" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
                   Скинути фільтри
-                </Link>
+                </a>
               )}
             </div>
           </AutoSubmitForm>

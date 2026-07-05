@@ -83,9 +83,11 @@ export default async function LocationsPage({ searchParams }: { searchParams: SP
                 <input name="name" defaultValue={fName} placeholder="Назва..." className="input" />
               </div>
               {hasFilters && (
-                <Link href="/locations" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
+                // Hard navigation on purpose: clears uncontrolled input values a soft Link transition would leave stale.
+                // eslint-disable-next-line @next/next/no-html-link-for-pages
+                <a href="/locations" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
                   Скинути фільтри
-                </Link>
+                </a>
               )}
             </div>
           </AutoSubmitForm>

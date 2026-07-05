@@ -197,9 +197,10 @@ export default async function TasksPage({ searchParams }: { searchParams: SP }) 
               </div>
 
               {hasFilters && (
-                <Link href="/tasks" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
+                // Hard navigation on purpose: clears uncontrolled input values a soft Link transition would leave stale.
+                <a href="/tasks" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
                   Скинути фільтри
-                </Link>
+                </a>
               )}
             </div>
           </AutoSubmitForm>
