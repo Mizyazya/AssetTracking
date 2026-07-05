@@ -476,6 +476,12 @@ textarea.input {
   overflow: hidden;
   background: var(--bg-elevated);
 }
+/* Tailwind's .overflow-x-auto has the same specificity as .table-wrap and
+   loses to it on source order, so re-assert overflow-x here explicitly. */
+.table-wrap.overflow-x-auto {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
 .table {
   width: 100%;
   border-collapse: collapse;
