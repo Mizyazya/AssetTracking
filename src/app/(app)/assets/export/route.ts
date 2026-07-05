@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { asset, location, person, task } from '@/db/schema';
 import { requireUser } from '@/lib/session';
@@ -20,15 +20,23 @@ export async function GET(req: NextRequest) {
   const fLocationIds = sp.getAll('location_id').map(v => parseInt(v)).filter(n => !Number.isNaN(n));
 
   const conds = [];
-  if (fName) conds.push(like(asset.name, `%${fName}%`));
-  if (fSerial) conds.push(like(asset.serial, `%${fSerial}%`));
   if (fType === 'active' || fType === 'component') conds.push(eq(asset.type, fType));
 
-  const rawAssets = db
+  // SQLite's LIKE only case-folds ASCII, so it misses "ноутбук" vs "Ноутбук" —
+  // name/serial matching happens in JS instead, where toLowerCase() handles Cyrillic correctly.
+  let rawAssets = db
     .select()
     .from(asset)
     .where(conds.length > 0 ? and(...conds) : undefined)
     .all();
+  if (fName) {
+    const needle = fName.toLowerCase();
+    rawAssets = rawAssets.filter(a => a.name.toLowerCase().includes(needle));
+  }
+  if (fSerial) {
+    const needle = fSerial.toLowerCase();
+    rawAssets = rawAssets.filter(a => (a.serial ?? '').toLowerCase().includes(needle));
+  }
 
   const persons = db.select().from(person).all();
   const locations = db.select().from(location).all();

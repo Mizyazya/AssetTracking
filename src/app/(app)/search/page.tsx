@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { eq, like, or } from 'drizzle-orm';
 import { db } from '@/db';
 import { asset, location, person, task } from '@/db/schema';
 import { requireUser } from '@/lib/session';
@@ -14,6 +13,13 @@ function str(v: string | string[] | undefined): string {
 
 const RESULT_LIMIT = 25;
 
+// SQLite's LIKE only case-folds ASCII, so a plain SQL `like()` misses
+// "ноутбук" vs "Ноутбук" — filter matching happens in JS instead, where
+// toLowerCase() handles Cyrillic correctly.
+function includesCi(haystack: string | null | undefined, needle: string): boolean {
+  return !!haystack && haystack.toLowerCase().includes(needle);
+}
+
 export default async function SearchPage({ searchParams }: { searchParams: SP }) {
   await requireUser();
   const sp = await searchParams;
@@ -25,36 +31,37 @@ export default async function SearchPage({ searchParams }: { searchParams: SP })
   let tasks: Array<typeof task.$inferSelect & { assetName: string }> = [];
 
   if (q) {
-    const pattern = `%${q}%`;
+    const needle = q.toLowerCase();
 
     assets = db
       .select()
       .from(asset)
-      .where(or(like(asset.name, pattern), like(asset.serial, pattern), like(asset.comments, pattern)))
-      .limit(RESULT_LIMIT)
-      .all();
+      .all()
+      .filter(a => includesCi(a.name, needle) || includesCi(a.serial, needle) || includesCi(a.comments, needle))
+      .slice(0, RESULT_LIMIT);
 
-    people = db.select().from(person).where(like(person.name, pattern)).limit(RESULT_LIMIT).all();
+    people = db
+      .select()
+      .from(person)
+      .all()
+      .filter(p => includesCi(p.name, needle))
+      .slice(0, RESULT_LIMIT);
 
-    locations = db.select().from(location).where(like(location.name, pattern)).limit(RESULT_LIMIT).all();
+    locations = db
+      .select()
+      .from(location)
+      .all()
+      .filter(l => includesCi(l.name, needle))
+      .slice(0, RESULT_LIMIT);
 
-    const taskRows = db
-      .select({
-        id: task.id,
-        assetId: task.assetId,
-        text: task.text,
-        status: task.status,
-        createdAt: task.createdAt,
-        closedAt: task.closedAt,
-        closeComment: task.closeComment,
-        assetName: asset.name,
-      })
+    const assetMap = new Map(db.select({ id: asset.id, name: asset.name }).from(asset).all().map(a => [a.id, a.name]));
+    tasks = db
+      .select()
       .from(task)
-      .innerJoin(asset, eq(task.assetId, asset.id))
-      .where(like(task.text, pattern))
-      .limit(RESULT_LIMIT)
-      .all();
-    tasks = taskRows;
+      .all()
+      .filter(t => includesCi(t.text, needle))
+      .slice(0, RESULT_LIMIT)
+      .map(t => ({ ...t, assetName: assetMap.get(t.assetId) ?? `#${t.assetId}` }));
   }
 
   const totalResults = assets.length + people.length + locations.length + tasks.length;
