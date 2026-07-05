@@ -8,6 +8,8 @@ import { getFlash } from '@/lib/flash';
 import { componentHolders } from '@/lib/ledger';
 import { formatDateTime } from '@/lib/time';
 import { editPerson, deletePerson } from '@/lib/people-actions';
+import { assignAsset, returnAsset } from '@/lib/asset-actions';
+import { PersonSearch } from '@/components/PersonSearch';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +38,13 @@ export default async function PersonDetailPage({
 
   const locations = db.select().from(location).all();
   const locMap = new Map(locations.map(l => [l.id, l]));
+
+  const persons = db.select().from(person).all();
+  const otherPersonOptions = persons
+    .filter(pp => pp.id !== personId)
+    .map(pp => ({ id: pp.id, name: pp.name, extra: pp.locationId ? locMap.get(pp.locationId)?.name : undefined }));
+
+  const returnTo = `/people/${personId}`;
 
   const activeAssets = db.select().from(asset).where(eq(asset.currentHolderId, personId)).all();
 
@@ -122,11 +131,28 @@ export default async function PersonDetailPage({
             {activeAssets.length === 0 ? (
               <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--fg-subtle)' }}>Немає активів</p>
             ) : (
-              <ul className="space-y-1">
+              <ul className="space-y-3">
                 {activeAssets.map(a => (
-                  <li key={a.id} style={{ fontSize: 'var(--fs-sm)' }}>
-                    <Link href={`/assets/${a.id}`} style={{ color: 'var(--primary)' }}>{a.name}</Link>
-                    {a.serial && <span style={{ color: 'var(--fg-subtle)' }}> ({a.serial})</span>}
+                  <li key={a.id} style={{ borderBottom: '1px solid var(--border-muted)', paddingBottom: 'var(--space-3)' }}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div style={{ fontSize: 'var(--fs-sm)' }}>
+                        <Link href={`/assets/${a.id}`} style={{ color: 'var(--primary)' }}>{a.name}</Link>
+                        {a.serial && <span style={{ color: 'var(--fg-subtle)' }}> ({a.serial})</span>}
+                      </div>
+                      <form action={returnAsset}>
+                        <input type="hidden" name="asset_id" value={a.id} />
+                        <input type="hidden" name="return_to" value={returnTo} />
+                        <button type="submit" className="btn secondary sm">Повернути на склад</button>
+                      </form>
+                    </div>
+                    <form action={assignAsset} className="flex flex-wrap items-center gap-2" style={{ marginTop: 'var(--space-2)' }}>
+                      <input type="hidden" name="asset_id" value={a.id} />
+                      <input type="hidden" name="return_to" value={returnTo} />
+                      <div style={{ minWidth: '12rem', flex: 1 }}>
+                        <PersonSearch persons={otherPersonOptions} name="person_id" required placeholder="Передати іншому..." />
+                      </div>
+                      <button type="submit" className="btn primary sm">Передати</button>
+                    </form>
                   </li>
                 ))}
               </ul>
@@ -136,26 +162,51 @@ export default async function PersonDetailPage({
           {components.length > 0 && (
             <section className="card space-y-2">
               <h2 className="font-medium">Компоненти</h2>
-              <div className="table-wrap overflow-x-auto">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Компонент</th>
-                      <th>Кількість</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {components.map(c => (
-                      <tr key={c.id}>
-                        <td>
-                          <Link href={`/assets/${c.id}`} style={{ color: 'var(--primary)' }}>{c.name}</Link>
-                        </td>
-                        <td className="font-medium">{c.balance}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="space-y-3">
+                {components.map(c => (
+                  <li key={c.id} style={{ borderBottom: '1px solid var(--border-muted)', paddingBottom: 'var(--space-3)' }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <Link href={`/assets/${c.id}`} style={{ color: 'var(--primary)' }}>{c.name}</Link>
+                      <span className="font-medium">{c.balance}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2" style={{ marginTop: 'var(--space-2)' }}>
+                      <form action={returnAsset} className="flex items-center gap-2">
+                        <input type="hidden" name="asset_id" value={c.id} />
+                        <input type="hidden" name="person_id" value={personId} />
+                        <input type="hidden" name="return_to" value={returnTo} />
+                        <input
+                          name="quantity"
+                          type="number"
+                          min={1}
+                          max={c.balance}
+                          defaultValue={c.balance}
+                          className="input"
+                          style={{ width: '4.5rem' }}
+                        />
+                        <button type="submit" className="btn secondary sm">Повернути</button>
+                      </form>
+                      <form action={assignAsset} className="flex flex-wrap items-center gap-2">
+                        <input type="hidden" name="asset_id" value={c.id} />
+                        <input type="hidden" name="from_person_id" value={personId} />
+                        <input type="hidden" name="return_to" value={returnTo} />
+                        <input
+                          name="quantity"
+                          type="number"
+                          min={1}
+                          max={c.balance}
+                          defaultValue={1}
+                          className="input"
+                          style={{ width: '4.5rem' }}
+                        />
+                        <div style={{ minWidth: '10rem' }}>
+                          <PersonSearch persons={otherPersonOptions} name="person_id" required placeholder="Кому передати..." />
+                        </div>
+                        <button type="submit" className="btn primary sm">Передати</button>
+                      </form>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
         </div>
