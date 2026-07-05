@@ -609,6 +609,7 @@ a.stat-card:hover { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ri
 
 /* ─ Page layout: sidebar + content ─ */
 .page-layout { display: grid; grid-template-columns: 230px 1fr; gap: var(--space-5); align-items: start; }
+.page-layout > * { min-width: 0; }
 .filter-panel { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); position: sticky; top: var(--space-4); }
 .filter-panel-title { font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-subtle); }
 
