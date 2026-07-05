@@ -347,22 +347,34 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
 
         {/* Table */}
         <div className="space-y-3">
-          <form
-            id="bulk-assets-form"
-            action={bulkTransferAssets}
-            className="flex flex-wrap items-center gap-2"
-            style={{ padding: 'var(--space-2) 0' }}
+          <div
+            className="space-y-2"
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              background: 'var(--bg-elevated)',
+              padding: 'var(--space-3) var(--space-4)',
+            }}
           >
-            <input type="hidden" name="return_to" value={buildUrl({})} />
-            <select name="person_id" defaultValue="" className="select" required style={{ maxWidth: '14rem' }}>
-              <option value="" disabled>Кому передати...</option>
-              {persons.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-            <input name="comment" placeholder="Коментар" className="input" style={{ maxWidth: '12rem' }} />
-            <button type="submit" className="btn secondary sm">Перемістити обрані активи</button>
-          </form>
+            <div className="filter-panel-title">
+              Масові дії <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(позначте активи галочками в таблиці)</span>
+            </div>
+            <form
+              id="bulk-assets-form"
+              action={bulkTransferAssets}
+              className="flex flex-wrap items-center gap-2"
+            >
+              <input type="hidden" name="return_to" value={buildUrl({})} />
+              <select name="person_id" defaultValue="" className="select" required style={{ maxWidth: '14rem' }}>
+                <option value="" disabled>Кому передати...</option>
+                {persons.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <input name="comment" placeholder="Коментар" className="input" style={{ maxWidth: '12rem' }} />
+              <button type="submit" className="btn primary sm">Перемістити обрані активи</button>
+            </form>
+          </div>
 
           <div className="table-wrap overflow-x-auto">
             <table className="table">

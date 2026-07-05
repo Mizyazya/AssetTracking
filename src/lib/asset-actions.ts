@@ -120,6 +120,7 @@ export async function assignAsset(formData: FormData) {
   const comment = (formData.get('comment') as string)?.trim() || null;
   const fromPersonIdRaw = formData.get('from_person_id') as string | null;
   const fromPersonId = fromPersonIdRaw ? parseInt(fromPersonIdRaw) : null;
+  const returnTo = (formData.get('return_to') as string) || `/assets/${assetId}`;
 
   const a = db.select().from(asset).where(eq(asset.id, assetId)).get();
   if (!a) redirect('/');
@@ -131,7 +132,7 @@ export async function assignAsset(formData: FormData) {
     const balance = holderBalance(assetId, fromPersonId);
     if (balance < qty) {
       await setFlash('Недостатньо компонентів у користувача для передачі', 'error');
-      redirect(`/assets/${assetId}`);
+      redirect(returnTo);
     }
     const fromName = personName(fromPersonId);
     const toName = personName(personId);
@@ -141,7 +142,7 @@ export async function assignAsset(formData: FormData) {
     // component from stock
     if ((a.quantity ?? 0) < qty) {
       await setFlash('Недостатньо компонентів на складі', 'error');
-      redirect(`/assets/${assetId}`);
+      redirect(returnTo);
     }
     const toName = personName(personId);
     const suffix = comment ? `. ${comment}` : '';
@@ -150,7 +151,7 @@ export async function assignAsset(formData: FormData) {
   }
 
   await setFlash('Майно видано');
-  redirect(`/assets/${assetId}`);
+  redirect(returnTo);
 }
 
 // ── Bulk transfer (active assets only — components need a quantity/source) ─
@@ -186,6 +187,7 @@ export async function returnAsset(formData: FormData) {
   const assetId = parseInt(formData.get('asset_id') as string);
   const fromPersonId = formData.get('person_id') ? parseInt(formData.get('person_id') as string) : null;
   const qty = Math.max(1, parseInt(formData.get('quantity') as string) || 1);
+  const returnTo = (formData.get('return_to') as string) || `/assets/${assetId}`;
 
   const a = db.select().from(asset).where(eq(asset.id, assetId)).get();
   if (!a) redirect('/');
@@ -195,11 +197,11 @@ export async function returnAsset(formData: FormData) {
     addLog(assetId, 'Повернено', `Повернено від ${holderName} на склад`, { personId: a.currentHolderId });
     db.update(asset).set({ currentHolderId: null, status: 'На складі' }).where(eq(asset.id, assetId)).run();
   } else {
-    if (!fromPersonId) redirect(`/assets/${assetId}`);
+    if (!fromPersonId) redirect(returnTo);
     const balance = holderBalance(assetId, fromPersonId);
     if (balance < qty) {
       await setFlash('Недостатньо компонентів у користувача для повернення', 'error');
-      redirect(`/assets/${assetId}`);
+      redirect(returnTo);
     }
     const pName = personName(fromPersonId);
     db.update(asset).set({ quantity: (a.quantity ?? 0) + qty }).where(eq(asset.id, assetId)).run();
@@ -207,7 +209,7 @@ export async function returnAsset(formData: FormData) {
   }
 
   await setFlash('Майно повернено');
-  redirect(`/assets/${assetId}`);
+  redirect(returnTo);
 }
 
 // ── Add supply (component only) ────────────────────────────────────────────
