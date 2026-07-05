@@ -673,3 +673,20 @@ a.stat-card:hover { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ri
   .app-footer { padding: var(--space-3); justify-content: center; }
 }
 
+/* ─ Page transitions ─ */
+.page-fade-in { animation: page-fade-in var(--dur-slow) var(--ease-out); }
+@keyframes page-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.skeleton-block {
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  animation: skeleton-pulse 1.2s var(--ease-in-out) infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+

@@ -4,7 +4,7 @@ import { db } from '@/db';
 import { task, asset, person, location } from '@/db/schema';
 import { requireUser } from '@/lib/session';
 import { getFlash } from '@/lib/flash';
-import { closeTask } from '@/lib/asset-actions';
+import { closeTask, bulkCloseTasks } from '@/lib/asset-actions';
 import { formatDateTime, formatDate } from '@/lib/time';
 import { AutoSubmitForm } from '@/components/AutoSubmitForm';
 
@@ -119,6 +119,20 @@ export default async function TasksPage({ searchParams }: { searchParams: SP }) 
     return `/tasks?${p.toString()}`;
   }
 
+  function exportUrl() {
+    const p = new URLSearchParams();
+    if (fLocationId) p.set('location_id', String(fLocationId));
+    if (fPersonId) p.set('person_id', String(fPersonId));
+    if (fAssetName) p.set('asset_name', fAssetName);
+    if (fTaskText) p.set('task_text', fTaskText);
+    if (fDateFrom) p.set('date_from', fDateFrom);
+    if (fDateTo) p.set('date_to', fDateTo);
+    if (fClosedFrom) p.set('closed_from', fClosedFrom);
+    if (fClosedTo) p.set('closed_to', fClosedTo);
+    const qs = p.toString();
+    return qs ? `/tasks/export?${qs}` : '/tasks/export';
+  }
+
   return (
     <div className="space-y-4">
       {flash && (
@@ -196,7 +210,10 @@ export default async function TasksPage({ searchParams }: { searchParams: SP }) 
 
         {/* Main content */}
         <div className="space-y-6">
-          <h1 className="text-2xl font-semibold">Задачі</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-semibold">Задачі</h1>
+            <a href={exportUrl()} className="btn secondary sm">Експорт CSV</a>
+          </div>
 
           {/* Active tasks */}
           <div className="space-y-3">
@@ -206,6 +223,18 @@ export default async function TasksPage({ searchParams }: { searchParams: SP }) 
                 ({active.length})
               </span>
             </h2>
+
+            {activeSlice.length > 0 && (
+              <form
+                id="bulk-tasks-form"
+                action={bulkCloseTasks}
+                className="flex flex-wrap items-center gap-2"
+              >
+                <input type="hidden" name="return_to" value="/tasks" />
+                <input name="close_comment" placeholder="Коментар" className="input" style={{ maxWidth: '12rem' }} />
+                <button type="submit" className="btn secondary sm">Закрити обрані задачі</button>
+              </form>
+            )}
 
             {activeSlice.length === 0 && (
               <div className="card text-center" style={{ color: 'var(--fg-subtle)', padding: 'var(--space-6)' }}>
@@ -238,7 +267,16 @@ export default async function TasksPage({ searchParams }: { searchParams: SP }) 
                       <li key={t.id} className="px-4 py-3" style={{ borderBottom: '1px solid var(--border-muted)' }}>
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div className="space-y-1 flex-1 min-w-[12rem]">
-                            <p style={{ fontSize: 'var(--fs-sm)' }}>{t.text}</p>
+                            <p style={{ fontSize: 'var(--fs-sm)' }}>
+                              <input
+                                type="checkbox"
+                                name="task_ids"
+                                value={t.id}
+                                form="bulk-tasks-form"
+                                style={{ marginRight: 'var(--space-2)' }}
+                              />
+                              {t.text}
+                            </p>
                             <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>
                               Створено: {formatDateTime(t.createdAt)}
                             </p>

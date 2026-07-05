@@ -8,6 +8,7 @@ import { holdersForAssets } from '@/lib/ledger';
 import { formatDate } from '@/lib/time';
 import { AddAssetModal } from '@/components/AddAssetModal';
 import { AutoSubmitForm } from '@/components/AutoSubmitForm';
+import { bulkTransferAssets } from '@/lib/asset-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -165,6 +166,17 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     return sortDir === 'desc' ? ' ↓' : ' ↑';
   }
 
+  function exportUrl() {
+    const p = new URLSearchParams();
+    if (fName) p.set('name', fName);
+    if (fSerial) p.set('serial', fSerial);
+    if (fType) p.set('type', fType);
+    if (fPersonId) p.set('person_id', String(fPersonId));
+    if (fLocationId) p.set('location_id', String(fLocationId));
+    const qs = p.toString();
+    return qs ? `/assets/export?${qs}` : '/assets/export';
+  }
+
   return (
     <div className="space-y-4">
       {flash && (
@@ -173,7 +185,10 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Облік майна</h1>
-        <AddAssetModal />
+        <div className="flex items-center gap-2">
+          <a href={exportUrl()} className="btn secondary sm">Експорт CSV</a>
+          <AddAssetModal />
+        </div>
       </div>
 
       {/* Stat cards */}
@@ -274,10 +289,28 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
 
         {/* Table */}
         <div className="space-y-3">
+          <form
+            id="bulk-assets-form"
+            action={bulkTransferAssets}
+            className="flex flex-wrap items-center gap-2"
+            style={{ padding: 'var(--space-2) 0' }}
+          >
+            <input type="hidden" name="return_to" value={buildUrl({})} />
+            <select name="person_id" defaultValue="" className="select" required style={{ maxWidth: '14rem' }}>
+              <option value="" disabled>Кому передати...</option>
+              {persons.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <input name="comment" placeholder="Коментар" className="input" style={{ maxWidth: '12rem' }} />
+            <button type="submit" className="btn secondary sm">Перемістити обрані активи</button>
+          </form>
+
           <div className="table-wrap overflow-x-auto">
             <table className="table">
               <thead>
                 <tr>
+                  <th style={{ width: '2rem' }}></th>
                   <th>
                     <a href={sortLink('name')}>
                       Назва{arrow('name')}
@@ -306,7 +339,7 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
                 {slice.length === 0 && (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="text-center"
                       style={{ color: 'var(--fg-subtle)', padding: 'var(--space-8)' }}
                     >
@@ -316,6 +349,11 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
                 )}
                 {slice.map(a => (
                   <tr key={a.id}>
+                    <td>
+                      {a.type === 'active' && (
+                        <input type="checkbox" name="asset_ids" value={a.id} form="bulk-assets-form" />
+                      )}
+                    </td>
                     <td>
                       <Link href={`/assets/${a.id}`} className="font-medium" style={{ color: 'var(--primary)' }}>
                         {a.name}

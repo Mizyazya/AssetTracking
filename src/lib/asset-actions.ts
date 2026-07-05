@@ -94,6 +94,24 @@ export async function addAsset(formData: FormData) {
 // ── Assign asset ───────────────────────────────────────────────────────────
 // Handles: active assignment, component from stock, component person-to-person.
 
+function assignActiveAsset(assetId: number, personId: number, comment: string | null): boolean {
+  const a = db.select().from(asset).where(eq(asset.id, assetId)).get();
+  if (!a || a.type !== 'active') return false;
+
+  const prevName = a.currentHolderId ? personName(a.currentHolderId) : null;
+  const newName = personName(personId);
+  const suffix = comment ? `. ${comment}` : '';
+
+  if (prevName) {
+    addLog(assetId, 'Передано', `Передано до ${newName}${suffix}`, { personId: a.currentHolderId });
+    addLog(assetId, 'Отримано', `Отримано від ${prevName}${suffix}`, { personId });
+  } else {
+    addLog(assetId, 'Отримано', `Видано ${newName}${suffix}`, { personId });
+  }
+  db.update(asset).set({ currentHolderId: personId, status: 'У користуванні' }).where(eq(asset.id, assetId)).run();
+  return true;
+}
+
 export async function assignAsset(formData: FormData) {
   await requireUser();
   const assetId = parseInt(formData.get('asset_id') as string);
@@ -107,17 +125,7 @@ export async function assignAsset(formData: FormData) {
   if (!a) redirect('/');
 
   if (a.type === 'active') {
-    const prevName = a.currentHolderId ? personName(a.currentHolderId) : null;
-    const newName = personName(personId);
-    const suffix = comment ? `. ${comment}` : '';
-
-    if (prevName) {
-      addLog(assetId, 'Передано', `Передано до ${newName}${suffix}`, { personId: a.currentHolderId });
-      addLog(assetId, 'Отримано', `Отримано від ${prevName}${suffix}`, { personId });
-    } else {
-      addLog(assetId, 'Отримано', `Видано ${newName}${suffix}`, { personId });
-    }
-    db.update(asset).set({ currentHolderId: personId, status: 'У користуванні' }).where(eq(asset.id, assetId)).run();
+    assignActiveAsset(assetId, personId, comment);
   } else if (fromPersonId) {
     // component person-to-person
     const balance = holderBalance(assetId, fromPersonId);
@@ -143,6 +151,32 @@ export async function assignAsset(formData: FormData) {
 
   await setFlash('Майно видано');
   redirect(`/assets/${assetId}`);
+}
+
+// ── Bulk transfer (active assets only — components need a quantity/source) ─
+
+export async function bulkTransferAssets(formData: FormData) {
+  await requireUser();
+  const assetIds = formData
+    .getAll('asset_ids')
+    .map(v => parseInt(v as string))
+    .filter(n => !Number.isNaN(n));
+  const personId = parseInt(formData.get('person_id') as string);
+  const comment = (formData.get('comment') as string)?.trim() || null;
+  const returnTo = (formData.get('return_to') as string) || '/';
+
+  if (assetIds.length === 0 || !personId) {
+    await setFlash('Оберіть майно та отримувача', 'error');
+    redirect(returnTo);
+  }
+
+  let count = 0;
+  for (const assetId of assetIds) {
+    if (assignActiveAsset(assetId, personId, comment)) count += 1;
+  }
+
+  await setFlash(count > 0 ? `Передано одиниць: ${count}` : 'Нічого не передано', count > 0 ? 'success' : 'error');
+  redirect(returnTo);
 }
 
 // ── Return asset ───────────────────────────────────────────────────────────
@@ -213,26 +247,53 @@ export async function addTask(formData: FormData) {
   redirect(`/assets/${assetId}`);
 }
 
+function closeTaskCore(taskId: number, closeComment: string | null): boolean {
+  const t = db.select().from(task).where(eq(task.id, taskId)).get();
+  if (!t || t.status === 'closed') return false;
+
+  const ts = now();
+  db.update(task).set({ status: 'closed', closedAt: ts, closeComment }).where(eq(task.id, taskId)).run();
+  addLog(t.assetId, 'Задача закрита', `Закрито: ${t.text}${closeComment ? ` (${closeComment})` : ''}`);
+  return true;
+}
+
 export async function closeTask(formData: FormData) {
   await requireUser();
   const taskId = parseInt(formData.get('task_id') as string);
   const assetId = parseInt(formData.get('asset_id') as string);
   const closeComment = (formData.get('close_comment') as string)?.trim() || null;
+  const returnTo = (formData.get('return_to') as string) || `/assets/${assetId}`;
 
-  const t = db.select().from(task).where(eq(task.id, taskId)).get();
-  if (!t) redirect(`/assets/${assetId}`);
-
-  if (t.status === 'closed') {
+  const ok = closeTaskCore(taskId, closeComment);
+  if (!ok) {
     await setFlash('Задача вже закрита.', 'error');
-    redirect(`/assets/${assetId}`);
+    redirect(returnTo);
   }
 
-  const ts = now();
-  db.update(task).set({ status: 'closed', closedAt: ts, closeComment }).where(eq(task.id, taskId)).run();
-  addLog(assetId, 'Задача закрита', `Закрито: ${t.text}${closeComment ? ` (${closeComment})` : ''}`);
-
-  const returnTo = (formData.get('return_to') as string) || `/assets/${assetId}`;
   await setFlash('Задачу закрито.');
+  redirect(returnTo);
+}
+
+export async function bulkCloseTasks(formData: FormData) {
+  await requireUser();
+  const taskIds = formData
+    .getAll('task_ids')
+    .map(v => parseInt(v as string))
+    .filter(n => !Number.isNaN(n));
+  const closeComment = (formData.get('close_comment') as string)?.trim() || null;
+  const returnTo = (formData.get('return_to') as string) || '/tasks';
+
+  if (taskIds.length === 0) {
+    await setFlash('Оберіть задачі для закриття', 'error');
+    redirect(returnTo);
+  }
+
+  let count = 0;
+  for (const taskId of taskIds) {
+    if (closeTaskCore(taskId, closeComment)) count += 1;
+  }
+
+  await setFlash(count > 0 ? `Закрито задач: ${count}` : 'Нічого не закрито', count > 0 ? 'success' : 'error');
   redirect(returnTo);
 }
 

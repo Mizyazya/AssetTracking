@@ -94,13 +94,25 @@ export default async function PeoplePage({ searchParams }: { searchParams: SP })
     return qs ? `/people?${qs}` : '/people';
   }
 
+  function exportUrl() {
+    const p = new URLSearchParams();
+    if (fName) p.set('name', fName);
+    if (fLocationId) p.set('location_id', fLocationId);
+    if (fHasAssets) p.set('has_assets', fHasAssets);
+    const qs = p.toString();
+    return qs ? `/people/export?${qs}` : '/people/export';
+  }
+
   return (
     <div className="space-y-4">
       {flash && (
         <div className={`alert ${flash.type === 'success' ? 'success' : 'danger'}`}>{flash.message}</div>
       )}
 
-      <h1 className="text-2xl font-semibold">Люди</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Люди</h1>
+        <a href={exportUrl()} className="btn secondary sm">Експорт CSV</a>
+      </div>
 
       <div className="page-layout">
         {/* Filter sidebar */}
