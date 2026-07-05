@@ -18,46 +18,49 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const hdrs = await headers();
   const returnTo = hdrs.get('x-invoke-path') ?? '/';
 
+  const pathname = hdrs.get('x-invoke-path') ?? '/';
+
+  function isActive(href: string) {
+    if (href === '/') return pathname === '/';
+    return pathname.startsWith(href);
+  }
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <nav className="bg-white border-b border-gray-200 px-6 py-0 flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <span className="font-semibold text-gray-900 py-3 mr-5 tracking-tight">Облік майна</span>
+    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
+      <nav className="app-nav">
+        <div className="app-nav-links">
+          <span className="app-brand">Облік майна</span>
           {navLinks.map(({ href, label }) => (
             <Link
               key={href}
               href={href}
-              className="px-3 py-3 text-sm text-gray-600 hover:text-gray-900 border-b-2 border-transparent hover:border-blue-500 transition-colors"
+              className={`nav-link${isActive(href) ? ' active' : ''}`}
             >
               {label}
             </Link>
           ))}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="app-nav-actions">
           {user.role === 'admin' && (
-            <Link href="/users" className="px-3 py-3 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+            <Link href="/users" className={`nav-link${isActive('/users') ? ' active' : ''}`}>
               Адмін
             </Link>
           )}
-          <Link href="/profile" className="px-3 py-3 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+          <Link href="/profile" className={`nav-link${isActive('/profile') ? ' active' : ''}`}>
             {user.username}
           </Link>
-          <form action={logout} className="ml-1">
-            <button type="submit" className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-50 rounded transition-colors">
-              Вийти
-            </button>
+          <form action={logout} style={{ marginLeft: 'var(--space-1)' }}>
+            <button type="submit" className="btn ghost sm">Вийти</button>
           </form>
         </div>
       </nav>
-      <main className="flex-1 p-6">{children}</main>
+      <main className="app-main">{children}</main>
 
       {user.role === 'admin' && (
-        <footer className="border-t border-gray-200 bg-white px-6 py-3 flex justify-end">
+        <footer className="app-footer">
           <form action={backupDatabase}>
             <input type="hidden" name="return_to" value={returnTo} />
-            <button type="submit" className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 shadow-xs transition-colors">
-              Резервна копія БД
-            </button>
+            <button type="submit" className="btn ghost sm">Резервна копія БД</button>
           </form>
         </footer>
       )}

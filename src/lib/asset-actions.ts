@@ -47,7 +47,7 @@ export async function addAsset(formData: FormData) {
 
   if (!name) {
     await setFlash('Назва не може бути порожньою', 'error');
-    redirect('/assets/new');
+    redirect('/');
   }
 
   let finalSerial = serial;
@@ -64,7 +64,7 @@ export async function addAsset(formData: FormData) {
           : 'Компонент з таким серійним номером вже існує',
         'error',
       );
-      redirect('/assets/new');
+      redirect('/');
     }
   }
 

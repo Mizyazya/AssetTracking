@@ -6,10 +6,12 @@ import { requireUser } from '@/lib/session';
 import { getFlash } from '@/lib/flash';
 import { holdersForAssets } from '@/lib/ledger';
 import { formatDate } from '@/lib/time';
+import { AddAssetModal } from '@/components/AddAssetModal';
+import { AutoSubmitForm } from '@/components/AutoSubmitForm';
 
 export const dynamic = 'force-dynamic';
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 20;
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
 
@@ -31,7 +33,6 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
   const sortBy = str(sp.sort) || 'created_at';
   const sortDir = str(sp.dir) || 'desc';
 
-  // Build WHERE conditions for SQL
   const conds = [];
   if (fName) conds.push(like(asset.name, `%${fName}%`));
   if (fSerial) conds.push(like(asset.serial, `%${fSerial}%`));
@@ -43,13 +44,12 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     .where(conds.length > 0 ? and(...conds) : undefined)
     .all();
 
-  // Load reference data
+  const allAssets = db.select({ type: asset.type }).from(asset).all();
   const persons = db.select().from(person).all();
   const locations = db.select().from(location).all();
   const personMap = new Map(persons.map(p => [p.id, p]));
   const locMap = new Map(locations.map(l => [l.id, l]));
 
-  // Task counts for all assets
   const taskCountRows = db
     .select({ assetId: task.assetId, cnt: count() })
     .from(task)
@@ -57,12 +57,16 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     .groupBy(task.assetId)
     .all();
   const taskCountMap = new Map(taskCountRows.map(r => [r.assetId, r.cnt]));
+  const totalActiveTasks = taskCountRows.reduce((sum, r) => sum + r.cnt, 0);
 
-  // Ledger for all component assets
+  const totalActives = allAssets.filter(a => a.type === 'active').length;
+  const totalComponents = allAssets.filter(a => a.type === 'component').length;
+  const totalPeople = persons.length;
+  const totalLocations = locations.length;
+
   const compIds = rawAssets.filter(a => a.type === 'component').map(a => a.id);
   const ledger = holdersForAssets(compIds);
 
-  // Enrich with computed fields
   const enriched = rawAssets.map(a => {
     let holderPerson: { id: number; name: string; locationId: number | null } | null = null;
     let holderLocation: { id: number; name: string } | null = null;
@@ -99,7 +103,6 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     };
   });
 
-  // Apply location/person filter (includes components via ledger)
   let filtered = enriched;
   if (fPersonId) {
     filtered = filtered.filter(a => {
@@ -117,7 +120,6 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     });
   }
 
-  // Sort
   filtered.sort((a, b) => {
     let cmp = 0;
     if (sortBy === 'name') cmp = a.name.localeCompare(b.name, 'uk');
@@ -131,6 +133,8 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const curPage = Math.min(page, totalPages);
   const slice = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
+
+  const hasFilters = fName || fSerial || fType || fPersonId || fLocationId;
 
   function buildUrl(overrides: Record<string, string | number | null | undefined>) {
     const base: Record<string, string> = {};
@@ -161,180 +165,240 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     return sortDir === 'desc' ? ' ↓' : ' ↑';
   }
 
-  const inputCls = 'rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900';
-
   return (
     <div className="space-y-4">
       {flash && (
-        <div
-          className={`rounded px-4 py-2 text-sm border ${flash.type === 'success' ? 'bg-green-50 text-green-800 border-green-200' : 'bg-red-50 text-red-800 border-red-200'}`}
-        >
-          {flash.message}
-        </div>
+        <div className={`alert ${flash.type === 'success' ? 'success' : 'danger'}`}>{flash.message}</div>
       )}
 
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">Облік майна</h1>
-        <Link
-          href="/assets/new"
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          Додати майно
+        <h1 className="text-2xl font-semibold">Облік майна</h1>
+        <AddAssetModal />
+      </div>
+
+      {/* Stat cards */}
+      <div className="stat-grid">
+        <div className="stat-card">
+          <span className="stat-card-value">{totalActives}</span>
+          <span className="stat-card-label">Активів</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-card-value">{totalComponents}</span>
+          <span className="stat-card-label">Компонентів</span>
+        </div>
+        <Link href="/people" className="stat-card" style={{ textDecoration: 'none' }}>
+          <span className="stat-card-value">{totalPeople}</span>
+          <span className="stat-card-label">Людей →</span>
         </Link>
-      </div>
-
-      {/* Filters */}
-      <form method="get" className="rounded border border-gray-200 bg-white p-3">
-        <div className="flex flex-wrap gap-2">
-          <input name="name" defaultValue={fName} placeholder="Назва" className={inputCls} />
-          <input name="serial" defaultValue={fSerial} placeholder="Серійний номер" className={inputCls} />
-          <select name="type" defaultValue={fType} className={inputCls}>
-            <option value="">Тип: усі</option>
-            <option value="active">Актив</option>
-            <option value="component">Компонент</option>
-          </select>
-          <select name="person_id" defaultValue={fPersonId?.toString() ?? ''} className={inputCls}>
-            <option value="">Держатель: усі</option>
-            {persons.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <select name="location_id" defaultValue={fLocationId?.toString() ?? ''} className={inputCls}>
-            <option value="">Локація: усі</option>
-            {locations.map(l => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-          <input type="hidden" name="sort" value={sortBy} />
-          <input type="hidden" name="dir" value={sortDir} />
-          <button type="submit" className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700">
-            Фільтр
-          </button>
-          <Link href="/" className="rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50">
-            Скинути
+        <Link href="/locations" className="stat-card" style={{ textDecoration: 'none' }}>
+          <span className="stat-card-value">{totalLocations}</span>
+          <span className="stat-card-label">Локацій →</span>
+        </Link>
+        {totalActiveTasks > 0 && (
+          <Link
+            href="/tasks"
+            className="stat-card"
+            style={{
+              textDecoration: 'none',
+              borderColor: 'color-mix(in oklch, var(--warning) 40%, transparent)',
+            }}
+          >
+            <span className="stat-card-value" style={{ color: 'var(--warning)' }}>
+              {totalActiveTasks}
+            </span>
+            <span className="stat-card-label" style={{ color: 'var(--warning-soft-fg)' }}>
+              Задач →
+            </span>
           </Link>
-        </div>
-      </form>
-
-      {/* Table */}
-      <div className="overflow-x-auto rounded border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr className="border-b border-gray-200 text-left text-gray-700">
-              <th className="pb-2 pr-4 font-medium">
-                <a href={sortLink('name')} className="hover:text-gray-900">
-                  Назва{arrow('name')}
-                </a>
-              </th>
-              <th className="pb-2 pr-4 font-medium">Серійний номер</th>
-              <th className="pb-2 pr-4 font-medium">Тип</th>
-              <th className="pb-2 pr-4 font-medium">
-                <a href={sortLink('location')} className="hover:text-gray-900">
-                  Держатель / Локація{arrow('location')}
-                </a>
-              </th>
-              <th className="pb-2 pr-4 font-medium">
-                <a href={sortLink('task_count')} className="hover:text-gray-900">
-                  Задачі{arrow('task_count')}
-                </a>
-              </th>
-              <th className="pb-2 font-medium">
-                <a href={sortLink('created_at')} className="hover:text-gray-900">
-                  Дата{arrow('created_at')}
-                </a>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {slice.length === 0 && (
-              <tr>
-                <td colSpan={6} className="py-8 text-center text-gray-500">
-                  Нічого не знайдено
-                </td>
-              </tr>
-            )}
-            {slice.map(a => (
-              <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 pr-4">
-                  <Link href={`/assets/${a.id}`} className="font-medium text-blue-600 hover:underline">
-                    {a.name}
-                  </Link>
-                  {a.comments && <span className="block truncate max-w-xs text-xs text-gray-500">{a.comments}</span>}
-                </td>
-                <td className="py-2 pr-4 text-gray-600">{a.serial ?? '—'}</td>
-                <td className="py-2 pr-4">
-                  <span
-                    className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${a.type === 'active' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}
-                  >
-                    {a.type === 'active' ? 'Актив' : 'Компонент'}
-                  </span>
-                </td>
-                <td className="py-2 pr-4">
-                  {a.type === 'active' ? (
-                    a.holderPerson ? (
-                      <span>
-                        <Link href={`/people/${a.holderPerson.id}`} className="text-blue-600 hover:underline">
-                          {a.holderPerson.name}
-                        </Link>
-                        {a.holderLocation && (
-                          <span className="text-gray-500"> / {a.holderLocation.name}</span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">На складі</span>
-                    )
-                  ) : a.compHolders.length > 0 ? (
-                    <div className="space-y-0.5">
-                      {a.compHolders.map(h => (
-                        <div key={h.id}>
-                          <Link href={`/people/${h.id}`} className="text-blue-600 hover:underline">
-                            {h.name}
-                          </Link>
-                          <span className="text-gray-500"> ×{h.qty}</span>
-                          {h.locName && <span className="text-gray-400"> / {h.locName}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-gray-400">На складі ({a.quantity ?? 0})</span>
-                  )}
-                </td>
-                <td className="py-2 pr-4">
-                  {a.taskCount > 0 ? (
-                    <span className="inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                      {a.taskCount}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400">—</span>
-                  )}
-                </td>
-                <td className="py-2 text-gray-500">{formatDate(a.createdAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        )}
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex flex-wrap gap-1">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-            <a
-              key={p}
-              href={buildUrl({ page: p })}
-              className={`rounded px-3 py-1 text-sm ${p === curPage ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-            >
-              {p}
-            </a>
-          ))}
-        </div>
-      )}
+      {/* Two-column layout: sidebar + table */}
+      <div className="page-layout">
+        {/* Filter sidebar */}
+        <aside className="filter-panel">
+          <div className="filter-panel-title">Фільтри</div>
+          <AutoSubmitForm method="get">
+            <div className="space-y-3">
+              <div className="field">
+                <label className="field-label">Назва</label>
+                <input name="name" defaultValue={fName} placeholder="Пошук..." className="input" />
+              </div>
+              <div className="field">
+                <label className="field-label">Серійний номер</label>
+                <input name="serial" defaultValue={fSerial} placeholder="SN..." className="input" />
+              </div>
+              <div className="field">
+                <label className="field-label">Тип</label>
+                <select name="type" defaultValue={fType} className="select">
+                  <option value="">Усі типи</option>
+                  <option value="active">Актив</option>
+                  <option value="component">Компонент</option>
+                </select>
+              </div>
+              <div className="field">
+                <label className="field-label">Держатель</label>
+                <select name="person_id" defaultValue={fPersonId?.toString() ?? ''} className="select">
+                  <option value="">Усі</option>
+                  {persons.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label className="field-label">Локація</label>
+                <select name="location_id" defaultValue={fLocationId?.toString() ?? ''} className="select">
+                  <option value="">Усі</option>
+                  {locations.map(l => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <input type="hidden" name="sort" value={sortBy} />
+              <input type="hidden" name="dir" value={sortDir} />
+              {hasFilters && (
+                <Link href="/" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
+                  Скинути фільтри
+                </Link>
+              )}
+            </div>
+          </AutoSubmitForm>
+          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)', marginTop: 'var(--space-1)' }}>
+            Знайдено: {total}
+          </p>
+        </aside>
 
-      <p className="text-sm text-gray-500">Всього: {total}</p>
+        {/* Table */}
+        <div className="space-y-3">
+          <div className="table-wrap overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>
+                    <a href={sortLink('name')}>
+                      Назва{arrow('name')}
+                    </a>
+                  </th>
+                  <th>Серійний номер</th>
+                  <th>Тип</th>
+                  <th>
+                    <a href={sortLink('location')}>
+                      Держатель / Локація{arrow('location')}
+                    </a>
+                  </th>
+                  <th>
+                    <a href={sortLink('task_count')}>
+                      Задачі{arrow('task_count')}
+                    </a>
+                  </th>
+                  <th>
+                    <a href={sortLink('created_at')}>
+                      Дата{arrow('created_at')}
+                    </a>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {slice.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="text-center"
+                      style={{ color: 'var(--fg-subtle)', padding: 'var(--space-8)' }}
+                    >
+                      Нічого не знайдено
+                    </td>
+                  </tr>
+                )}
+                {slice.map(a => (
+                  <tr key={a.id}>
+                    <td>
+                      <Link href={`/assets/${a.id}`} className="font-medium" style={{ color: 'var(--primary)' }}>
+                        {a.name}
+                      </Link>
+                      {a.comments && (
+                        <span
+                          className="block truncate max-w-xs"
+                          style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}
+                        >
+                          {a.comments}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-xs)' }}>{a.serial ?? '—'}</td>
+                    <td>
+                      <span className={`badge ${a.type === 'active' ? 'primary' : 'info'}`}>
+                        {a.type === 'active' ? 'Актив' : 'Компонент'}
+                      </span>
+                    </td>
+                    <td>
+                      {a.type === 'active' ? (
+                        a.holderPerson ? (
+                          <span>
+                            <Link href={`/people/${a.holderPerson.id}`} style={{ color: 'var(--primary)' }}>
+                              {a.holderPerson.name}
+                            </Link>
+                            {a.holderLocation && (
+                              <span style={{ color: 'var(--fg-subtle)' }}> / {a.holderLocation.name}</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--fg-disabled)' }}>На складі</span>
+                        )
+                      ) : a.compHolders.length > 0 ? (
+                        <div className="space-y-0.5">
+                          {(a.quantity ?? 0) > 0 && (
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-disabled)' }}>
+                              Склад: {a.quantity}
+                            </div>
+                          )}
+                          {a.compHolders.map(h => (
+                            <div key={h.id}>
+                              <Link href={`/people/${h.id}`} style={{ color: 'var(--primary)' }}>
+                                {h.name}
+                              </Link>
+                              <span style={{ color: 'var(--fg-subtle)' }}> ×{h.qty}</span>
+                              {h.locName && (
+                                <span style={{ color: 'var(--fg-disabled)' }}> / {h.locName}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--fg-disabled)' }}>На складі ({a.quantity ?? 0})</span>
+                      )}
+                    </td>
+                    <td>
+                      {a.taskCount > 0 ? (
+                        <span className="badge warning">{a.taskCount}</span>
+                      ) : (
+                        <span style={{ color: 'var(--fg-disabled)' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ color: 'var(--fg-subtle)', fontSize: 'var(--fs-xs)' }}>
+                      {formatDate(a.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                <a key={p} href={buildUrl({ page: p })} className={`page-btn${p === curPage ? ' active' : ''}`}>
+                  {p}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

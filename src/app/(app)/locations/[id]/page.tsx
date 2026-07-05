@@ -25,20 +25,14 @@ export default async function LocationDetailPage({
   const loc = db.select().from(location).where(eq(location.id, locationId)).get();
   if (!loc) notFound();
 
-  // People at this location
   const persons = db.select().from(person).where(eq(person.locationId, locationId)).orderBy(person.name).all();
   const personIds = persons.map(p => p.id);
 
-  // Active assets per person
-  const activeAssets = db
-    .select()
-    .from(asset)
-    .where(eq(asset.type, 'active'))
-    .all()
+  const activeAssets = db.select().from(asset).where(eq(asset.type, 'active')).all()
     .filter(a => a.currentHolderId != null && personIds.includes(a.currentHolderId));
 
-  // Component assets & ledger balances per person
   const components = db.select().from(asset).where(eq(asset.type, 'component')).all();
+
   type ComponentBalance = { asset: typeof components[0]; qty: number };
   const personComponents = new Map<number, ComponentBalance[]>();
   for (const c of components) {
@@ -52,89 +46,164 @@ export default async function LocationDetailPage({
     }
   }
 
-  const inputCls = 'block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none';
-  const labelCls = 'block text-sm font-medium text-gray-700';
+  // Build aggregated component totals across all people at this location
+  type CompTotal = {
+    assetId: number;
+    assetName: string;
+    total: number;
+    byPerson: { personId: number; personName: string; qty: number }[];
+  };
+  const compTotals = new Map<number, CompTotal>();
+  for (const p of persons) {
+    const comps = personComponents.get(p.id) ?? [];
+    for (const { asset: c, qty } of comps) {
+      if (!compTotals.has(c.id)) {
+        compTotals.set(c.id, { assetId: c.id, assetName: c.name, total: 0, byPerson: [] });
+      }
+      const entry = compTotals.get(c.id)!;
+      entry.total += qty;
+      entry.byPerson.push({ personId: p.id, personName: p.name, qty });
+    }
+  }
+  const sortedCompTotals = Array.from(compTotals.values()).sort((a, b) =>
+    a.assetName.localeCompare(b.assetName, 'uk'),
+  );
 
   return (
     <div className="space-y-6">
       {flash && (
-        <div className={`rounded px-4 py-2 text-sm border ${flash.type === 'success' ? 'bg-green-50 text-green-800 border-green-200' : 'bg-red-50 text-red-800 border-red-200'}`}>
-          {flash.message}
-        </div>
+        <div className={`alert ${flash.type === 'success' ? 'success' : 'danger'}`}>{flash.message}</div>
       )}
 
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Link href="/locations" className="text-sm text-gray-500 hover:text-gray-900">← Локації</Link>
-          <h1 className="mt-1 text-2xl font-semibold text-gray-900">{loc.name}</h1>
-          <p className="text-sm text-gray-500">{persons.length} людей</p>
+          <Link href="/locations" style={{ fontSize: 'var(--fs-sm)', color: 'var(--fg-muted)' }}>← Локації</Link>
+          <h1 className="mt-1 text-2xl font-semibold">{loc.name}</h1>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--fg-subtle)' }}>{persons.length} людей</p>
         </div>
-        <form action={deleteLocation}>
-          <input type="hidden" name="location_id" value={loc.id} />
-          <button type="submit" className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">
-            Видалити
-          </button>
-        </form>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Edit form */}
-        <section className="rounded border border-gray-200 bg-white p-4 space-y-3">
-          <h2 className="font-medium text-gray-900">Редагувати</h2>
-          <form action={editLocation} className="space-y-3">
+        <div className="flex flex-wrap gap-2 items-start">
+          <form action={editLocation} className="flex flex-wrap gap-2">
             <input type="hidden" name="location_id" value={loc.id} />
-            <div className="space-y-1">
-              <label className={labelCls}>Назва</label>
-              <input name="name" type="text" required defaultValue={loc.name} className={inputCls} />
-            </div>
-            <button type="submit" className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-              Зберегти
-            </button>
+            <input name="name" type="text" required defaultValue={loc.name} className="input" style={{ width: '14rem', maxWidth: '100%' }} />
+            <button type="submit" className="btn secondary sm">Зберегти</button>
           </form>
-        </section>
-
-        {/* People & their assets */}
-        <section className="rounded border border-gray-200 bg-white p-4 space-y-4">
-          <h2 className="font-medium text-gray-900">Люди та їх майно</h2>
-          {persons.length === 0 && <p className="text-sm text-gray-500">Немає людей</p>}
-          {persons.map(p => {
-            const myAssets = activeAssets.filter(a => a.currentHolderId === p.id);
-            const myComponents = personComponents.get(p.id) ?? [];
-            return (
-              <div key={p.id} className="space-y-1 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
-                <Link href={`/people/${p.id}`} className="font-medium text-blue-600 hover:underline">
-                  {p.name}
-                </Link>
-                {p.phone && <span className="ml-2 text-xs text-gray-500">{p.phone}</span>}
-                {myAssets.length === 0 && myComponents.length === 0 && (
-                  <p className="text-xs text-gray-400">Немає майна</p>
-                )}
-                {myAssets.length > 0 && (
-                  <ul className="ml-3 space-y-0.5">
-                    {myAssets.map(a => (
-                      <li key={a.id} className="text-sm">
-                        <Link href={`/assets/${a.id}`} className="text-blue-600 hover:underline">{a.name}</Link>
-                        {a.serial && <span className="text-gray-500"> ({a.serial})</span>}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {myComponents.length > 0 && (
-                  <ul className="ml-3 space-y-0.5">
-                    {myComponents.map(c => (
-                      <li key={c.asset.id} className="text-sm text-gray-600">
-                        <Link href={`/assets/${c.asset.id}`} className="text-blue-600 hover:underline">{c.asset.name}</Link>
-                        <span className="text-gray-500"> ×{c.qty}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-        </section>
+          <form action={deleteLocation}>
+            <input type="hidden" name="location_id" value={loc.id} />
+            <button type="submit" className="btn danger outline sm">Видалити</button>
+          </form>
+        </div>
       </div>
+
+      {/* Component totals summary */}
+      {sortedCompTotals.length > 0 && (
+        <section className="card space-y-3">
+          <h2 className="font-medium">Компоненти на локації</h2>
+          <div className="table-wrap overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Компонент</th>
+                  <th style={{ width: '6rem' }}>Загалом</th>
+                  <th>Розподіл</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedCompTotals.map(ct => (
+                  <tr key={ct.assetId}>
+                    <td>
+                      <Link href={`/assets/${ct.assetId}`} style={{ color: 'var(--primary)' }}>
+                        {ct.assetName}
+                      </Link>
+                    </td>
+                    <td className="font-semibold">{ct.total}</td>
+                    <td style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)' }}>
+                      {ct.byPerson.map(bp => (
+                        <span key={bp.personId} className="mr-3 whitespace-nowrap">
+                          <Link href={`/people/${bp.personId}`} style={{ color: 'var(--fg)' }}>
+                            {bp.personName}
+                          </Link>
+                          {' '}({bp.qty})
+                        </span>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* People table */}
+      <section className="card space-y-3">
+        <h2 className="font-medium">Люди</h2>
+        {persons.length === 0 ? (
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--fg-subtle)' }}>Немає людей на цій локації</p>
+        ) : (
+          <div className="table-wrap overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Особа</th>
+                  <th>Активи</th>
+                  <th>Компоненти</th>
+                </tr>
+              </thead>
+              <tbody>
+                {persons.map(p => {
+                  const myAssets = activeAssets.filter(a => a.currentHolderId === p.id);
+                  const myComponents = personComponents.get(p.id) ?? [];
+                  return (
+                    <tr key={p.id} className="align-top">
+                      <td>
+                        <Link href={`/people/${p.id}`} className="font-medium" style={{ color: 'var(--primary)' }}>
+                          {p.name}
+                        </Link>
+                        {p.phone && (
+                          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>{p.phone}</div>
+                        )}
+                      </td>
+                      <td>
+                        {myAssets.length === 0 ? (
+                          <span style={{ color: 'var(--fg-disabled)', fontSize: 'var(--fs-sm)' }}>—</span>
+                        ) : (
+                          <ul className="space-y-0.5">
+                            {myAssets.map(a => (
+                              <li key={a.id} style={{ fontSize: 'var(--fs-sm)' }}>
+                                <Link href={`/assets/${a.id}`} style={{ color: 'var(--primary)' }}>{a.name}</Link>
+                                {a.serial && (
+                                  <span style={{ color: 'var(--fg-subtle)' }}> ({a.serial})</span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                      <td>
+                        {myComponents.length === 0 ? (
+                          <span style={{ color: 'var(--fg-disabled)', fontSize: 'var(--fs-sm)' }}>—</span>
+                        ) : (
+                          <ul className="space-y-0.5">
+                            {myComponents.map(c => (
+                              <li key={c.asset.id} style={{ fontSize: 'var(--fs-sm)' }}>
+                                <Link href={`/assets/${c.asset.id}`} style={{ color: 'var(--primary)' }}>
+                                  {c.asset.name}
+                                </Link>
+                                <span style={{ color: 'var(--fg-subtle)' }}> ×{c.qty}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

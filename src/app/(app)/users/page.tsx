@@ -1,20 +1,41 @@
 import Link from 'next/link';
 import { db } from '@/db';
 import { user, userSession } from '@/db/schema';
-import { eq, count } from 'drizzle-orm';
+import { eq, count, like, and } from 'drizzle-orm';
 import { requireAdmin } from '@/lib/session';
 import { getFlash } from '@/lib/flash';
 import { deleteUser } from '@/lib/user-actions';
+import { AutoSubmitForm } from '@/components/AutoSubmitForm';
 
 export const dynamic = 'force-dynamic';
 
-export default async function UsersPage() {
+const PAGE_SIZE = 15;
+
+type SP = Promise<Record<string, string | string[] | undefined>>;
+function str(v: string | string[] | undefined): string {
+  return Array.isArray(v) ? (v[0] ?? '') : (v ?? '');
+}
+
+export default async function UsersPage({ searchParams }: { searchParams: SP }) {
   await requireAdmin();
+  const sp = await searchParams;
   const flash = await getFlash();
 
-  const users = db.select().from(user).orderBy(user.username).all();
+  const page = Math.max(1, parseInt(str(sp.page)) || 1);
+  const fName = str(sp.username);
+  const fRole = str(sp.role);
 
-  // Active session count per user
+  const conds = [];
+  if (fName) conds.push(like(user.username, `%${fName}%`));
+  if (fRole === 'admin' || fRole === 'user') conds.push(eq(user.role, fRole));
+
+  const users = db
+    .select()
+    .from(user)
+    .where(conds.length > 0 ? and(...conds) : undefined)
+    .orderBy(user.username)
+    .all();
+
   const sessionCounts = db
     .select({ userId: userSession.userId, cnt: count() })
     .from(userSession)
@@ -23,61 +44,129 @@ export default async function UsersPage() {
     .all();
   const sessionCountMap = new Map(sessionCounts.map(r => [r.userId, r.cnt]));
 
+  const total = users.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const curPage = Math.min(page, totalPages);
+  const slice = users.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
+
+  const hasFilters = fName || fRole;
+
+  function buildUrl(overrides: Record<string, string | number | null | undefined>) {
+    const base: Record<string, string> = {};
+    if (fName) base.username = fName;
+    if (fRole) base.role = fRole;
+    base.page = String(curPage);
+    const merged = { ...base, ...overrides };
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(merged)) {
+      if (v != null && v !== '') p.set(k, String(v));
+    }
+    const qs = p.toString();
+    return qs ? `/users?${qs}` : '/users';
+  }
+
   return (
     <div className="space-y-4">
       {flash && (
-        <div className={`rounded px-4 py-2 text-sm border ${flash.type === 'success' ? 'bg-green-50 text-green-800 border-green-200' : 'bg-red-50 text-red-800 border-red-200'}`}>
-          {flash.message}
-        </div>
+        <div className={`alert ${flash.type === 'success' ? 'success' : 'danger'}`}>{flash.message}</div>
       )}
 
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">Користувачі</h1>
-        <Link href="/users/new" className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+        <h1 className="text-2xl font-semibold">Користувачі</h1>
+        <Link href="/users/new" className="btn primary">
           Додати
         </Link>
       </div>
 
-      <div className="overflow-x-auto rounded border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr className="border-b border-gray-200 text-left text-gray-700">
-              <th className="py-2 pr-4 font-medium">Логін</th>
-              <th className="py-2 pr-4 font-medium">Роль</th>
-              <th className="py-2 pr-4 font-medium">Активних сесій</th>
-              <th className="py-2 font-medium">Дії</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 pr-4">
-                  <Link href={`/users/${u.id}`} className="font-medium text-blue-600 hover:underline">
-                    {u.username}
-                  </Link>
-                </td>
-                <td className="py-2 pr-4">
-                  <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${u.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
-                    {u.role === 'admin' ? 'Адмін' : 'Користувач'}
-                  </span>
-                </td>
-                <td className="py-2 pr-4">
-                  <Link href={`/users/${u.id}/sessions`} className="text-blue-600 hover:underline">
-                    {sessionCountMap.get(u.id) ?? 0}
-                  </Link>
-                </td>
-                <td className="py-2">
-                  <form action={deleteUser} className="inline">
-                    <input type="hidden" name="user_id" value={u.id} />
-                    <button type="submit" className="text-xs text-red-500 hover:text-red-700">
-                      Видалити
-                    </button>
-                  </form>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="page-layout">
+        {/* Filter sidebar */}
+        <aside className="filter-panel">
+          <div className="filter-panel-title">Фільтри</div>
+          <AutoSubmitForm method="get" action="/users">
+            <div className="space-y-3">
+              <div className="field">
+                <label className="field-label">Логін</label>
+                <input name="username" defaultValue={fName} placeholder="Пошук..." className="input" />
+              </div>
+              <div className="field">
+                <label className="field-label">Роль</label>
+                <select name="role" defaultValue={fRole} className="select">
+                  <option value="">Усі</option>
+                  <option value="admin">Адмін</option>
+                  <option value="user">Користувач</option>
+                </select>
+              </div>
+              {hasFilters && (
+                <Link href="/users" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
+                  Скинути фільтри
+                </Link>
+              )}
+            </div>
+          </AutoSubmitForm>
+          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>Знайдено: {total}</p>
+        </aside>
+
+        {/* Table */}
+        <div className="space-y-3">
+          <div className="table-wrap overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Логін</th>
+                  <th>Роль</th>
+                  <th>Активних сесій</th>
+                  <th>Дії</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slice.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="text-center" style={{ color: 'var(--fg-subtle)', padding: 'var(--space-8)' }}>
+                      Нікого не знайдено
+                    </td>
+                  </tr>
+                )}
+                {slice.map(u => (
+                  <tr key={u.id}>
+                    <td>
+                      <Link href={`/users/${u.id}`} className="font-medium" style={{ color: 'var(--primary)' }}>
+                        {u.username}
+                      </Link>
+                    </td>
+                    <td>
+                      <span className={`badge ${u.role === 'admin' ? 'warning' : 'info'}`}>
+                        {u.role === 'admin' ? 'Адмін' : 'Користувач'}
+                      </span>
+                    </td>
+                    <td>
+                      <Link href={`/users/${u.id}/sessions`} style={{ color: 'var(--primary)' }}>
+                        {sessionCountMap.get(u.id) ?? 0}
+                      </Link>
+                    </td>
+                    <td>
+                      <form action={deleteUser} className="inline">
+                        <input type="hidden" name="user_id" value={u.id} />
+                        <button type="submit" className="btn link danger sm">
+                          Видалити
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(pg => (
+                <a key={pg} href={buildUrl({ page: pg })} className={`page-btn${pg === curPage ? ' active' : ''}`}>
+                  {pg}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,17 +1,20 @@
 import Link from 'next/link';
-import { eq, like, and } from 'drizzle-orm';
+import { and, count, eq, isNotNull, like } from 'drizzle-orm';
 import { db } from '@/db';
 import { person, location, asset } from '@/db/schema';
 import { requireUser } from '@/lib/session';
 import { getFlash } from '@/lib/flash';
+import { holdersForAssets } from '@/lib/ledger';
 import { addPerson, deletePerson } from '@/lib/people-actions';
+import { AutoSubmitForm } from '@/components/AutoSubmitForm';
+import { Modal } from '@/components/Modal';
 
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 15;
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
-function str(v: string | string[] | undefined) {
+function str(v: string | string[] | undefined): string {
   return Array.isArray(v) ? (v[0] ?? '') : (v ?? '');
 }
 
@@ -21,23 +24,14 @@ export default async function PeoplePage({ searchParams }: { searchParams: SP })
   const flash = await getFlash();
 
   const page = Math.max(1, parseInt(str(sp.page)) || 1);
-  const fSearch = str(sp.search);
-  const fLocationId = sp.location_id ? parseInt(str(sp.location_id)) : null;
-  const fHasAssets = str(sp.has_assets); // 'yes' | 'no' | ''
+  const fName = str(sp.name);
+  const fLocationId = str(sp.location_id);
+  const fHasAssets = str(sp.has_assets);
 
-  const locations = db.select().from(location).all();
-  const locMap = new Map(locations.map(l => [l.id, l]));
+  const locations = db.select().from(location).orderBy(location.name).all();
 
-  // Fetch persons with optional filters
   const conds = [];
-  if (fSearch) conds.push(like(person.name, `%${fSearch}%`));
-  if (fLocationId === 0) {
-    // 'none' — без локації
-    conds.push(eq(person.locationId, null as unknown as number));
-  } else if (fLocationId) {
-    conds.push(eq(person.locationId, fLocationId));
-  }
-
+  if (fName) conds.push(like(person.name, `%${fName}%`));
   const persons = db
     .select()
     .from(person)
@@ -45,158 +39,211 @@ export default async function PeoplePage({ searchParams }: { searchParams: SP })
     .orderBy(person.name)
     .all();
 
-  // Filter by has_assets (PORTING.md §7.2: only checks current_holder_id, not ledger)
-  const assetHolders = new Set(
-    db
-      .select({ id: asset.currentHolderId })
-      .from(asset)
-      .where(eq(asset.type, 'active'))
-      .all()
-      .map(r => r.id)
-      .filter((id): id is number => id != null),
-  );
+  const activeCountRows = db
+    .select({ personId: asset.currentHolderId, cnt: count() })
+    .from(asset)
+    .where(and(eq(asset.type, 'active'), isNotNull(asset.currentHolderId)))
+    .groupBy(asset.currentHolderId)
+    .all();
+  const activeCountMap = new Map(activeCountRows.map(r => [r.personId as number, r.cnt]));
 
-  let filtered = persons;
-  if (fHasAssets === 'yes') filtered = persons.filter(p => assetHolders.has(p.id));
-  if (fHasAssets === 'no') filtered = persons.filter(p => !assetHolders.has(p.id));
+  const compIds = db.select({ id: asset.id }).from(asset).where(eq(asset.type, 'component')).all().map(r => r.id);
+  const compLedger = holdersForAssets(compIds);
+  const compCountMap = new Map<number, number>();
+  for (const holders of compLedger.values()) {
+    for (const [pid, qty] of holders) {
+      compCountMap.set(pid, (compCountMap.get(pid) ?? 0) + qty);
+    }
+  }
 
-  const total = filtered.length;
+  let rows = persons.map(p => ({
+    id: p.id,
+    name: p.name,
+    locationId: p.locationId ?? null,
+    phone: p.phone ?? null,
+    activeCount: activeCountMap.get(p.id) ?? 0,
+    compCount: compCountMap.get(p.id) ?? 0,
+  }));
+
+  if (fLocationId === 'none') rows = rows.filter(p => p.locationId === null);
+  else if (fLocationId) rows = rows.filter(p => p.locationId === parseInt(fLocationId));
+  if (fHasAssets === 'yes') rows = rows.filter(p => p.activeCount > 0);
+  else if (fHasAssets === 'no') rows = rows.filter(p => p.activeCount === 0);
+
+  const locMap = new Map(locations.map(l => [l.id, l.name]));
+
+  const total = rows.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const curPage = Math.min(page, totalPages);
-  const slice = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
+  const slice = rows.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
 
-  // Active filter description (PORTING.md §7.2)
-  const filterDesc: string[] = [];
-  if (fLocationId === 0) filterDesc.push('Локація: без локації');
-  else if (fLocationId) filterDesc.push(`Локація: ${locMap.get(fLocationId)?.name ?? fLocationId}`);
-  if (fSearch) filterDesc.push(`Пошук: '${fSearch}'`);
-  if (fHasAssets === 'yes') filterDesc.push('Має майно');
-  if (fHasAssets === 'no') filterDesc.push('Немає майна');
+  const hasFilters = fName || fLocationId || fHasAssets;
 
   function buildUrl(overrides: Record<string, string | number | null | undefined>) {
     const base: Record<string, string> = {};
-    if (fSearch) base.search = fSearch;
-    if (fLocationId != null) base.location_id = String(fLocationId);
+    if (fName) base.name = fName;
+    if (fLocationId) base.location_id = fLocationId;
     if (fHasAssets) base.has_assets = fHasAssets;
     base.page = String(curPage);
-    const p = new URLSearchParams({ ...base, ...Object.fromEntries(Object.entries(overrides).filter(([, v]) => v != null && v !== '').map(([k, v]) => [k, String(v)])) });
-    return `/people?${p.toString()}`;
+    const merged = { ...base, ...overrides };
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(merged)) {
+      if (v != null && v !== '') p.set(k, String(v));
+    }
+    const qs = p.toString();
+    return qs ? `/people?${qs}` : '/people';
   }
-
-  const inputCls = 'rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900';
 
   return (
     <div className="space-y-4">
       {flash && (
-        <div className={`rounded px-4 py-2 text-sm border ${flash.type === 'success' ? 'bg-green-50 text-green-800 border-green-200' : 'bg-red-50 text-red-800 border-red-200'}`}>
-          {flash.message}
-        </div>
+        <div className={`alert ${flash.type === 'success' ? 'success' : 'danger'}`}>{flash.message}</div>
       )}
 
-      <h1 className="text-2xl font-semibold text-gray-900">Люди</h1>
+      <h1 className="text-2xl font-semibold">Люди</h1>
 
-      {/* Filters */}
-      <form method="get" action="/people" className="rounded border border-gray-200 bg-white p-3">
-        <div className="flex flex-wrap gap-2">
-          <input name="search" defaultValue={fSearch} placeholder="Пошук за іменем" className={inputCls} />
-          <select name="location_id" defaultValue={fLocationId?.toString() ?? ''} className={inputCls}>
-            <option value="">Локація: усі</option>
-            <option value="0">Без локації</option>
-            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
-          <select name="has_assets" defaultValue={fHasAssets} className={inputCls}>
-            <option value="">Майно: усі</option>
-            <option value="yes">Має майно</option>
-            <option value="no">Немає майна</option>
-          </select>
-          <button type="submit" className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700">
-            Фільтр
-          </button>
-          <Link href="/people" className="rounded border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 hover:bg-gray-50">
-            Скинути
-          </Link>
+      <div className="page-layout">
+        {/* Filter sidebar */}
+        <aside className="filter-panel">
+          <div className="filter-panel-title">Фільтри</div>
+          <AutoSubmitForm method="get" action="/people">
+            <div className="space-y-3">
+              <div className="field">
+                <label className="field-label">Пошук</label>
+                <input name="name" defaultValue={fName} placeholder="Ім'я..." className="input" />
+              </div>
+              <div className="field">
+                <label className="field-label">Локація</label>
+                <select name="location_id" defaultValue={fLocationId} className="select">
+                  <option value="">Усі</option>
+                  <option value="none">Без локації</option>
+                  {locations.map(l => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label className="field-label">Майно</label>
+                <select name="has_assets" defaultValue={fHasAssets} className="select">
+                  <option value="">Усі</option>
+                  <option value="yes">Є майно</option>
+                  <option value="no">Немає майна</option>
+                </select>
+              </div>
+              {hasFilters && (
+                <Link href="/people" className="btn secondary sm" style={{ display: 'block', textAlign: 'center' }}>
+                  Скинути фільтри
+                </Link>
+              )}
+            </div>
+          </AutoSubmitForm>
+
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--space-3)', marginTop: 'var(--space-1)' }}>
+            <Modal triggerLabel="+ Додати особу" triggerClassName="btn primary sm" title="Нова особа">
+              <form action={addPerson} className="space-y-4">
+                <div className="field">
+                  <label className="field-label">
+                    Ім&apos;я <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <input name="name" type="text" required className="input" placeholder="Іван Франко" autoFocus />
+                </div>
+                <div className="field">
+                  <label className="field-label">Телефон</label>
+                  <input name="phone" type="text" className="input" placeholder="+380..." />
+                </div>
+                <div className="field">
+                  <label className="field-label">Локація</label>
+                  <select name="location_id" className="select">
+                    <option value="">Без локації</option>
+                    {locations.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button type="submit" className="btn primary block">
+                  Додати особу
+                </button>
+              </form>
+            </Modal>
+          </div>
+
+          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>Знайдено: {total}</p>
+        </aside>
+
+        {/* Table */}
+        <div className="space-y-3">
+          <div className="table-wrap overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Ім&apos;я</th>
+                  <th>Локація</th>
+                  <th>Телефон</th>
+                  <th style={{ width: '5rem', textAlign: 'right' }}>Активів</th>
+                  <th style={{ width: '6rem', textAlign: 'right' }}>Компоненти</th>
+                  <th style={{ width: '5rem' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {slice.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center" style={{ color: 'var(--fg-subtle)', padding: 'var(--space-8)' }}>
+                      Нікого не знайдено
+                    </td>
+                  </tr>
+                )}
+                {slice.map(p => (
+                  <tr key={p.id}>
+                    <td>
+                      <Link href={`/people/${p.id}`} className="font-medium" style={{ color: 'var(--primary)' }}>
+                        {p.name}
+                      </Link>
+                    </td>
+                    <td style={{ color: 'var(--fg-muted)' }}>{p.locationId ? (locMap.get(p.locationId) ?? '—') : '—'}</td>
+                    <td style={{ color: 'var(--fg-muted)' }}>{p.phone ?? '—'}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {p.activeCount > 0 ? (
+                        <span className="badge primary">{p.activeCount}</span>
+                      ) : (
+                        <span style={{ color: 'var(--fg-disabled)' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {p.compCount > 0 ? (
+                        <span className="badge info">{p.compCount}</span>
+                      ) : (
+                        <span style={{ color: 'var(--fg-disabled)' }}>—</span>
+                      )}
+                    </td>
+                    <td>
+                      <form action={deletePerson} className="inline">
+                        <input type="hidden" name="person_id" value={p.id} />
+                        <button type="submit" className="btn link danger sm">
+                          Видалити
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="pagination">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(pg => (
+                <a key={pg} href={buildUrl({ page: pg })} className={`page-btn${pg === curPage ? ' active' : ''}`}>
+                  {pg}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
-        {filterDesc.length > 0 && (
-          <p className="mt-2 text-xs text-gray-500">{filterDesc.join(' · ')}</p>
-        )}
-      </form>
-
-      {/* Add person form */}
-      <details className="rounded border border-gray-200 bg-white p-4">
-        <summary className="cursor-pointer font-medium text-gray-900 hover:text-blue-600">
-          + Додати людину
-        </summary>
-        <form action={addPerson} className="mt-3 flex flex-wrap gap-3">
-          <input name="name" type="text" required placeholder="Ім'я *" className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 w-48" />
-          <input name="phone" type="text" placeholder="Телефон" className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 w-36" />
-          <select name="location_id" className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900">
-            <option value="">Без локації</option>
-            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
-          <button type="submit" className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
-            Додати
-          </button>
-        </form>
-      </details>
-
-      {/* Table */}
-      <div className="overflow-x-auto rounded border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr className="border-b border-gray-200 text-left text-gray-700">
-              <th className="py-2 pr-4 font-medium">Ім'я</th>
-              <th className="py-2 pr-4 font-medium">Локація</th>
-              <th className="py-2 pr-4 font-medium">Телефон</th>
-              <th className="py-2 font-medium">Дії</th>
-            </tr>
-          </thead>
-          <tbody>
-            {slice.length === 0 && (
-              <tr><td colSpan={4} className="py-8 text-center text-gray-500">Нікого не знайдено</td></tr>
-            )}
-            {slice.map(p => (
-              <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 pr-4">
-                  <Link href={`/people/${p.id}`} className="font-medium text-blue-600 hover:underline">
-                    {p.name}
-                  </Link>
-                  {assetHolders.has(p.id) && (
-                    <span className="ml-2 inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">є майно</span>
-                  )}
-                </td>
-                <td className="py-2 pr-4 text-gray-600">
-                  {p.locationId ? locMap.get(p.locationId)?.name ?? '—' : '—'}
-                </td>
-                <td className="py-2 pr-4 text-gray-600">{p.phone ?? '—'}</td>
-                <td className="py-2">
-                  <form action={deletePerson} className="inline">
-                    <input type="hidden" name="person_id" value={p.id} />
-                    <button
-                      type="submit"
-                      className="text-xs text-red-500 hover:text-red-700"
-                      onClick={() => {}}
-                    >
-                      Видалити
-                    </button>
-                  </form>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
-
-      {totalPages > 1 && (
-        <div className="flex flex-wrap gap-1">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-            <a key={p} href={buildUrl({ page: p })}
-              className={`rounded px-3 py-1 text-sm ${p === curPage ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-              {p}
-            </a>
-          ))}
-        </div>
-      )}
-      <p className="text-sm text-gray-500">Всього: {total}</p>
     </div>
   );
 }
