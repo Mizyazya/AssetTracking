@@ -18,46 +18,49 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const hdrs = await headers();
   const returnTo = hdrs.get('x-invoke-path') ?? '/';
 
+  const pathname = hdrs.get('x-invoke-path') ?? '/';
+
+  function isActive(href: string) {
+    if (href === '/') return pathname === '/';
+    return pathname.startsWith(href);
+  }
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <nav className="bg-white border-b border-gray-200 px-6 py-0 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <span className="font-semibold text-gray-900 py-3">Облік майна</span>
+    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
+      <nav className="app-nav">
+        <div className="app-nav-links">
+          <span className="app-brand">Облік майна</span>
           {navLinks.map(({ href, label }) => (
             <Link
               key={href}
               href={href}
-              className="py-3 text-sm text-gray-600 hover:text-gray-900 border-b-2 border-transparent hover:border-gray-400"
+              className={`nav-link${isActive(href) ? ' active' : ''}`}
             >
               {label}
             </Link>
           ))}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="app-nav-actions">
           {user.role === 'admin' && (
-            <Link href="/users" className="py-3 text-sm text-gray-600 hover:text-gray-900">
+            <Link href="/users" className={`nav-link${isActive('/users') ? ' active' : ''}`}>
               Адмін
             </Link>
           )}
-          <Link href="/profile" className="py-3 text-sm text-gray-600 hover:text-gray-900">
+          <Link href="/profile" className={`nav-link${isActive('/profile') ? ' active' : ''}`}>
             {user.username}
           </Link>
-          <form action={logout}>
-            <button type="submit" className="text-sm text-gray-500 hover:text-gray-900 underline">
-              Вийти
-            </button>
+          <form action={logout} style={{ marginLeft: 'var(--space-1)' }}>
+            <button type="submit" className="btn ghost sm">Вийти</button>
           </form>
         </div>
       </nav>
-      <main className="flex-1 p-6">{children}</main>
+      <main className="app-main">{children}</main>
 
       {user.role === 'admin' && (
-        <footer className="border-t border-gray-200 bg-white px-6 py-3 flex justify-end">
+        <footer className="app-footer">
           <form action={backupDatabase}>
             <input type="hidden" name="return_to" value={returnTo} />
-            <button type="submit" className="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
-              Резервна копія БД
-            </button>
+            <button type="submit" className="btn ghost sm">Резервна копія БД</button>
           </form>
         </footer>
       )}
