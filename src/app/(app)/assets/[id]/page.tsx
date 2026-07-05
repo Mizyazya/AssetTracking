@@ -139,7 +139,7 @@ export default async function AssetDetailPage({
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* LEFT COLUMN */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           {a.type === 'active' && (
             <>
               <section className={sectionCls}>
@@ -280,7 +280,7 @@ export default async function AssetDetailPage({
         </div>
 
         {/* RIGHT COLUMN */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <section className={sectionCls}>
             <h2 className="font-medium">Редагувати</h2>
             <form action={editAsset} className="space-y-3">

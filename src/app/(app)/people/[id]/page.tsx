@@ -93,7 +93,7 @@ export default async function PersonDetailPage({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <section className="card space-y-3">
             <h2 className="font-medium">Редагувати</h2>
             <form action={editPerson} className="space-y-3">
@@ -160,7 +160,7 @@ export default async function PersonDetailPage({
           )}
         </div>
 
-        <section className="card space-y-3">
+        <section className="card space-y-3 min-w-0">
           <h2 className="font-medium">
             Історія{' '}
             <span className="font-normal" style={{ fontSize: 'var(--fs-sm)', color: 'var(--fg-subtle)' }}>

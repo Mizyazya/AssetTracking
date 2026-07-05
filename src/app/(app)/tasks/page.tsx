@@ -237,7 +237,7 @@ export default async function TasksPage({ searchParams }: { searchParams: SP }) 
                     {tasks.map(t => (
                       <li key={t.id} className="px-4 py-3" style={{ borderBottom: '1px solid var(--border-muted)' }}>
                         <div className="flex flex-wrap items-start justify-between gap-4">
-                          <div className="space-y-1 flex-1">
+                          <div className="space-y-1 flex-1 min-w-[12rem]">
                             <p style={{ fontSize: 'var(--fs-sm)' }}>{t.text}</p>
                             <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>
                               Створено: {formatDateTime(t.createdAt)}
