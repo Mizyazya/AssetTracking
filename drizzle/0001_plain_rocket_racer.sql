@@ -1,0 +1,1 @@
+ALTER TABLE `user_session` ADD `last_seen_at` text;

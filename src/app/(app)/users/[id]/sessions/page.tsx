@@ -3,12 +3,15 @@ import Link from 'next/link';
 import { eq, desc } from 'drizzle-orm';
 import { db } from '@/db';
 import { user, userSession } from '@/db/schema';
-import { requireAdmin } from '@/lib/session';
+import { requireAdmin, sessionStatus, formatSessionIp } from '@/lib/session';
 import { getFlash } from '@/lib/flash';
 import { closeSession } from '@/lib/user-actions';
 import { formatDateTime } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
+
+const STATUS_LABEL = { active: 'Активна', expired: 'Завершена (тайм-аут)', closed: 'Завершена' } as const;
+const STATUS_BADGE = { active: 'success', expired: 'warning', closed: 'info' } as const;
 
 export default async function UserSessionsPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
@@ -58,31 +61,32 @@ export default async function UserSessionsPage({ params }: { params: Promise<{ i
                 </td>
               </tr>
             )}
-            {sessions.map(s => (
-              <tr key={s.id}>
-                <td className="whitespace-nowrap" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)' }}>
-                  {formatDateTime(s.loginTime)}
-                </td>
-                <td className="whitespace-nowrap" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)' }}>
-                  {s.logoutTime ? formatDateTime(s.logoutTime) : '—'}
-                </td>
-                <td style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>{s.ip ?? '—'}</td>
-                <td>
-                  <span className={`badge ${s.active ? 'success' : 'info'}`}>
-                    {s.active ? 'Активна' : 'Завершена'}
-                  </span>
-                </td>
-                <td>
-                  {s.active && (
-                    <form action={closeSession} className="inline">
-                      <input type="hidden" name="session_id" value={s.id} />
-                      <input type="hidden" name="return_to" value={`/users/${userId}/sessions`} />
-                      <button type="submit" className="btn link danger sm">Завершити</button>
-                    </form>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {sessions.map(s => {
+              const status = sessionStatus(s);
+              return (
+                <tr key={s.id}>
+                  <td className="whitespace-nowrap" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)' }}>
+                    {formatDateTime(s.loginTime)}
+                  </td>
+                  <td className="whitespace-nowrap" style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-muted)' }}>
+                    {s.logoutTime ? formatDateTime(s.logoutTime) : '—'}
+                  </td>
+                  <td style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-subtle)' }}>{formatSessionIp(s.ip)}</td>
+                  <td>
+                    <span className={`badge ${STATUS_BADGE[status]}`}>{STATUS_LABEL[status]}</span>
+                  </td>
+                  <td>
+                    {status === 'active' && (
+                      <form action={closeSession} className="inline">
+                        <input type="hidden" name="session_id" value={s.id} />
+                        <input type="hidden" name="return_to" value={`/users/${userId}/sessions`} />
+                        <button type="submit" className="btn link danger sm">Завершити</button>
+                      </form>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -70,4 +70,9 @@ export const userSession = sqliteTable('user_session', {
   ip: text('ip'),
   userAgent: text('user_agent'),
   active: integer('active', { mode: 'boolean' }).default(true),
+  // Оновлюється на кожен автентифікований запит — дозволяє відрізнити
+  // "справді ще активна" від "ніхто не позначив неактивною, бо просто
+  // закрили вкладку" (сесія технічно спливла за SESSION_MAX_AGE, але
+  // рядок active лишався б true назавжди без цього поля).
+  lastSeenAt: text('last_seen_at'),
 });
