@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { db } from '@/db';
 import { user, userSession } from '@/db/schema';
-import { eq, count, like, and } from 'drizzle-orm';
-import { requireAdmin } from '@/lib/session';
+import { eq, like, and } from 'drizzle-orm';
+import { requireAdmin, sessionStatus } from '@/lib/session';
 import { getFlash } from '@/lib/flash';
 import { deleteUser } from '@/lib/user-actions';
 import { AutoSubmitForm } from '@/components/AutoSubmitForm';
@@ -36,13 +36,19 @@ export default async function UsersPage({ searchParams }: { searchParams: SP }) 
     .orderBy(user.username)
     .all();
 
-  const sessionCounts = db
-    .select({ userId: userSession.userId, cnt: count() })
+  // `active` alone doesn't mean still-valid — see sessionStatus() in lib/session.ts —
+  // so count in JS rather than a plain SQL `WHERE active`, or a timed-out session
+  // nobody ever re-visited (and so never got lazily flipped) would still be counted.
+  const activeRows = db
+    .select({ userId: userSession.userId, lastSeenAt: userSession.lastSeenAt, loginTime: userSession.loginTime, active: userSession.active })
     .from(userSession)
     .where(eq(userSession.active, true))
-    .groupBy(userSession.userId)
     .all();
-  const sessionCountMap = new Map(sessionCounts.map(r => [r.userId, r.cnt]));
+  const sessionCountMap = new Map<number, number>();
+  for (const r of activeRows) {
+    if (sessionStatus(r) !== 'active') continue;
+    sessionCountMap.set(r.userId, (sessionCountMap.get(r.userId) ?? 0) + 1);
+  }
 
   const total = users.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));

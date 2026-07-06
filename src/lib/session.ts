@@ -75,8 +75,31 @@ export async function createSession(
   const now = new Date().toISOString();
   await db
     .insert(userSession)
-    .values({ userId, sessionId: sid, loginTime: now, ip, userAgent, active: true });
+    .values({ userId, sessionId: sid, loginTime: now, ip, userAgent, active: true, lastSeenAt: now });
   return signSession({ uid: userId, sid });
+}
+
+// Sliding 30-min lifetime was enforced only by the browser dropping an
+// expired cookie (proxy.ts refreshes maxAge on each request) — there was no
+// server-side timestamp check, so a replayed/copied cookie value (or the row
+// shown on the sessions admin page) stayed "active" forever until someone
+// explicitly logged out. lastSeenAt + this check make expiry real on the
+// server, not just a client-side courtesy.
+export function isSessionExpired(session: Pick<SessionRow, 'lastSeenAt' | 'loginTime'>): boolean {
+  const last = session.lastSeenAt ?? session.loginTime;
+  if (!last) return false;
+  const lastMs = new Date(last).getTime();
+  if (Number.isNaN(lastMs)) return false;
+  return Date.now() - lastMs > SESSION_MAX_AGE * 1000;
+}
+
+export type SessionStatus = 'active' | 'expired' | 'closed';
+
+// Display-only status for the sessions list pages — doesn't write to the DB,
+// just tells the truth about a row `active` alone can't (see isSessionExpired).
+export function sessionStatus(session: Pick<SessionRow, 'active' | 'lastSeenAt' | 'loginTime'>): SessionStatus {
+  if (!session.active) return 'closed';
+  return isSessionExpired(session) ? 'expired' : 'active';
 }
 
 export async function getCurrentUser(): Promise<{ user: UserRow; session: SessionRow } | null> {
@@ -95,9 +118,24 @@ export async function getCurrentUser(): Promise<{ user: UserRow; session: Sessio
     const session = sessions[0];
     if (!session || !session.active) return null;
     if (session.userId !== uid) return null;
+
+    if (isSessionExpired(session)) {
+      await db
+        .update(userSession)
+        .set({ active: false, logoutTime: new Date().toISOString() })
+        .where(eq(userSession.sessionId, sid));
+      return null;
+    }
+
     const users = await db.select().from(user).where(eq(user.id, uid)).limit(1);
     const userRow = users[0];
     if (!userRow) return null;
+
+    await db
+      .update(userSession)
+      .set({ lastSeenAt: new Date().toISOString() })
+      .where(eq(userSession.sessionId, sid));
+
     return { user: userRow, session };
   } catch {
     return null;
@@ -129,6 +167,18 @@ export async function destroyCurrentSession(): Promise<void> {
     }
   }
   cookieStore.delete('session');
+}
+
+// The `ip` column stores the raw X-Forwarded-For chain as-is (see
+// auth-actions.ts), not just the first hop, so we can show both "who
+// actually connected" and "which reverse proxy it came through" instead of
+// only ever seeing the proxy's own address.
+export function formatSessionIp(raw: string | null): string {
+  if (!raw) return '—';
+  const hops = raw.split(',').map(s => s.trim()).filter(Boolean);
+  if (hops.length === 0) return '—';
+  if (hops.length === 1) return hops[0];
+  return `${hops[0]} (${hops[hops.length - 1]})`;
 }
 
 export async function ensureBootstrapUser(): Promise<void> {
